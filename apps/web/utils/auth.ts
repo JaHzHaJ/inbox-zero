@@ -30,6 +30,7 @@ import {
   isGoogleOauthEmulationEnabled,
 } from "@/utils/google/oauth";
 import { createScopedLogger } from "@/utils/logger";
+import { decryptToken } from "@/utils/encryption";
 import {
   getMicrosoftOauthDiscoveryUrl,
   getMicrosoftOauthIssuer,
@@ -564,16 +565,17 @@ export async function handleLinkAccount(account: Account) {
       return;
     }
 
-    if (!account.accessToken) {
+    // The Prisma encryption extension mutates the create payload in place, so
+    // the account object this hook receives can carry the encrypted token.
+    // decryptToken passes plaintext through unchanged, so this is safe both ways.
+    const accessToken = decryptToken(account.accessToken ?? null);
+    if (!accessToken) {
       logger.error(
         "[linkAccount] No access_token found in data, cannot fetch profile.",
       );
       throw new Error("Missing access token during account linking.");
     }
-    const profileData = await getProfileData(
-      account.providerId,
-      account.accessToken,
-    );
+    const profileData = await getProfileData(account.providerId, accessToken);
 
     if (!profileData?.email) {
       logger.error("[handleLinkAccount] No email found in profile data");

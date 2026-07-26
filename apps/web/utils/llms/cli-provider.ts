@@ -107,7 +107,9 @@ export async function createClaudeCodeLanguageModelWithBridgedTools({
     allowedTools,
     mcpServers: { [CLAUDE_CODE_MCP_SERVER_NAME]: mcpServer },
     permissionMode: "default",
-    sandbox: { enabled: true },
+    // Sandboxing is unavailable on Windows hosts; without failIfUnavailable
+    // the CLI refuses to run there instead of degrading gracefully.
+    sandbox: { enabled: true, failIfUnavailable: false },
   });
 
   return wrapWithUnprefixedToolNames(inner);
@@ -222,7 +224,9 @@ async function createClaudeCodeLanguageModel(modelName: string) {
     settingSources: [],
     allowedTools: [],
     permissionMode: "default",
-    sandbox: { enabled: true },
+    // Sandboxing is unavailable on Windows hosts; without failIfUnavailable
+    // the CLI refuses to run there instead of degrading gracefully.
+    sandbox: { enabled: true, failIfUnavailable: false },
   });
 }
 

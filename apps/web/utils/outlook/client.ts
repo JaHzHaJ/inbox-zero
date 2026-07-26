@@ -1,4 +1,9 @@
-import { Client } from "@microsoft/microsoft-graph-client";
+import {
+  Client,
+  HTTPMessageHandler,
+  type Context,
+  type Middleware,
+} from "@microsoft/microsoft-graph-client";
 import type { User } from "@microsoft/microsoft-graph-types";
 import { saveTokens } from "@/utils/auth/save-tokens";
 import { cleanupInvalidTokens } from "@/utils/auth/cleanup-invalid-tokens";
@@ -15,6 +20,34 @@ import { isInvalidGrantError, SafeError } from "@/utils/error";
 // Add buffer time to prevent token expiry during long-running operations
 const TOKEN_REFRESH_BUFFER_MS = 10 * 60 * 1000; // 10 minutes
 
+/**
+ * The SDK's AuthenticationHandler only attaches (and otherwise deletes) the
+ * Authorization header for https URLs, so against the plain-http local
+ * emulator every request would leave unauthenticated. This minimal chain
+ * attaches the headers itself and skips that handler entirely. Emulator only.
+ */
+function createEmulatorMiddleware(
+  accessToken: string,
+  extraHeaders: Record<string, string>,
+): Middleware {
+  let next: Middleware | undefined;
+  return {
+    async execute(context: Context) {
+      context.options ??= {};
+      const options = context.options;
+      options.headers = {
+        ...(options.headers as Record<string, string> | undefined),
+        Authorization: `Bearer ${accessToken}`,
+        ...extraHeaders,
+      };
+      await next?.execute(context);
+    },
+    setNext(nextMiddleware: Middleware) {
+      next = nextMiddleware;
+    },
+  };
+}
+
 // Wrapper class to hold both the Microsoft Graph client and its access token
 export class OutlookClient {
   private readonly client: Client;
@@ -27,21 +60,28 @@ export class OutlookClient {
     this.accessToken = accessToken;
     this.logger = logger;
     const graphClientOptions = getMicrosoftGraphClientOptions(accessToken);
-    this.client = Client.init({
-      authProvider: (done) => {
-        done(null, this.accessToken);
-      },
-      defaultVersion: "v1.0",
-      ...graphClientOptions,
-      // Use immutable IDs to ensure message IDs remain stable
-      // https://learn.microsoft.com/en-us/graph/outlook-immutable-id
-      fetchOptions: {
-        headers: {
-          ...(graphClientOptions.fetchOptions?.headers ?? {}),
-          Prefer: 'IdType="ImmutableId"',
-        },
-      },
-    });
+    // Use immutable IDs to ensure message IDs remain stable
+    // https://learn.microsoft.com/en-us/graph/outlook-immutable-id
+    const immutableIdHeader = { Prefer: 'IdType="ImmutableId"' };
+    this.client = graphClientOptions.baseUrl
+      ? // Emulation: custom chain, the default one strips auth on plain http.
+        Client.initWithMiddleware({
+          baseUrl: graphClientOptions.baseUrl,
+          defaultVersion: "v1.0",
+          middleware: [
+            createEmulatorMiddleware(this.accessToken, immutableIdHeader),
+            new HTTPMessageHandler(),
+          ],
+        })
+      : Client.init({
+          authProvider: (done) => {
+            done(null, this.accessToken);
+          },
+          defaultVersion: "v1.0",
+          fetchOptions: {
+            headers: immutableIdHeader,
+          },
+        });
   }
 
   getClient(): Client {
