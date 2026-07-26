@@ -16,7 +16,25 @@ type DigestItem = {
   from: string;
   subject: string;
   content: string;
+  date?: string;
+  role?: "to" | "cc";
+  url?: string;
 };
+
+/** « jeu. 23 juil. 07:52 » — vide si la date est absente ou invalide. */
+function formatItemDate(date?: string): string {
+  if (!date) return "";
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return new Intl.DateTimeFormat("fr-FR", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Paris",
+  }).format(parsed);
+}
 
 const colorClasses = {
   blue: {
@@ -189,13 +207,44 @@ export default function DigestEmail(props: DigestEmailProps) {
                     {/* Email Header */}
                     <div className="mb-[12px]">
                       <Text className="text-[16px] font-bold text-gray-900 mt-0 mb-0">
-                        {item.subject}
+                        {item.url ? (
+                          <Link
+                            href={item.url}
+                            className="text-gray-900 no-underline"
+                          >
+                            {item.subject}
+                          </Link>
+                        ) : (
+                          item.subject
+                        )}
+                        {item.role === "cc" && (
+                          <span className="ml-[8px] rounded-[4px] bg-gray-100 px-[6px] py-[1px] text-[11px] font-normal text-gray-600 align-middle">
+                            En copie
+                          </span>
+                        )}
                       </Text>
                       <Text className="text-[14px] text-gray-700 mt-[2px] mb-0">
                         De :{" "}
                         <span className="font-medium text-gray-800">
                           {item.from}
                         </span>
+                        {formatItemDate(item.date) && (
+                          <span className="text-gray-500">
+                            {" · "}
+                            {formatItemDate(item.date)}
+                          </span>
+                        )}
+                        {item.url && (
+                          <span className="text-[12px]">
+                            {" · "}
+                            <Link
+                              href={item.url}
+                              className="text-gray-500 underline"
+                            >
+                              Ouvrir le mail
+                            </Link>
+                          </span>
+                        )}
                       </Text>
                     </div>
 

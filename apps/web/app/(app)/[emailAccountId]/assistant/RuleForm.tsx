@@ -24,11 +24,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/Input";
 import { toastError, toastSuccess } from "@/components/Toast";
 import { TypographyH3 } from "@/components/Typography";
-import { ActionType, SystemType } from "@/generated/prisma/enums";
+import { ActionType, DigestBucket, SystemType } from "@/generated/prisma/enums";
 import {
   createRuleAction,
   deleteRuleAction,
   updateRuleAction,
+  updateRuleDigestBucketAction,
 } from "@/utils/actions/rule";
 import {
   type CreateRuleBody,
@@ -116,6 +117,7 @@ export function RuleForm({
 }: {
   rule: CreateRuleBody & {
     id?: string;
+    digestBucket?: DigestBucket | null;
     attachmentSources?: Array<{
       driveConnectionId: string;
       name: string;
@@ -436,6 +438,42 @@ export function RuleForm({
   const [isDeleting, setIsDeleting] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
 
+  // Saved immediately (outside the main form submit), like the digest
+  // settings dialog does for scalar account fields.
+  const [digestBucket, setDigestBucket] = useState<DigestBucket | "AUTO">(
+    rule.digestBucket ?? "AUTO",
+  );
+
+  const digestSectionOptions: {
+    value: DigestBucket | "AUTO";
+    label: string;
+  }[] = [
+    { value: "AUTO", label: "Automatic" },
+    { value: DigestBucket.TO_REPLY, label: "To reply" },
+    { value: DigestBucket.FYI, label: "For information" },
+    { value: DigestBucket.NO_ACTION, label: "No action needed" },
+  ];
+
+  const onChangeDigestBucket = useCallback(
+    async (value: DigestBucket | "AUTO") => {
+      if (!rule.id) return;
+      const previous = digestBucket;
+      setDigestBucket(value);
+      const result = await updateRuleDigestBucketAction(emailAccountId, {
+        ruleId: rule.id,
+        digestBucket: value === "AUTO" ? null : value,
+      });
+      if (result?.serverError) {
+        setDigestBucket(previous);
+        toastError({
+          title: "Error updating digest section",
+          description: result.serverError,
+        });
+      }
+    },
+    [rule.id, emailAccountId, digestBucket],
+  );
+
   const toggleNameEditMode = useCallback(() => {
     if (!alwaysEditMode) {
       setIsNameEditMode((prev: boolean) => !prev);
@@ -611,6 +649,38 @@ export function RuleForm({
                     )}
                   </AdvancedRow>
                 )}
+
+                {env.NEXT_PUBLIC_DIGEST_ENABLED &&
+                  hasDigestAccess &&
+                  !!rule.id &&
+                  (watch("digest") || false) && (
+                    <AdvancedRow
+                      title="Digest section"
+                      description="Where matched emails appear in the digest. Automatic follows the rule type. Saved immediately."
+                    >
+                      <Select
+                        value={digestBucket}
+                        onValueChange={(value) =>
+                          onChangeDigestBucket(value as DigestBucket | "AUTO")
+                        }
+                      >
+                        <SelectTrigger className="w-[180px]">
+                          {
+                            digestSectionOptions.find(
+                              (option) => option.value === digestBucket,
+                            )?.label
+                          }
+                        </SelectTrigger>
+                        <SelectContent>
+                          {digestSectionOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </AdvancedRow>
+                  )}
 
                 <NotifyChannelRow
                   channels={messagingChannelsData?.channels ?? []}

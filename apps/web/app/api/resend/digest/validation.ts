@@ -7,6 +7,9 @@ const digestItemSchema = z.object({
   from: z.string(),
   subject: z.string(),
   content: z.string(),
+  date: z.string().optional(),
+  role: z.enum(["to", "cc"]).optional(),
+  url: z.string().optional(),
 });
 
 const digestSchema = z.record(z.string(), z.array(digestItemSchema).optional());

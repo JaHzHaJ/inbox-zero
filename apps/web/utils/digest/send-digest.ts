@@ -22,7 +22,14 @@ import {
 import { isMessagingChannelOperational } from "@/utils/messaging/channel-validity";
 import prisma from "@/utils/prisma";
 
-type DigestItem = { from: string; subject: string; content: string };
+type DigestItem = {
+  from: string;
+  subject: string;
+  content: string;
+  date?: string;
+  role?: "to" | "cc";
+  url?: string;
+};
 type ItemsByRule = Record<string, DigestItem[] | undefined>;
 
 export async function sendDigest({

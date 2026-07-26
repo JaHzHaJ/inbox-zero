@@ -577,6 +577,9 @@ model Rule {
 
   systemType SystemType?
 
+  /// Overrides the digest section derived from systemType. Null = automatic.
+  digestBucket DigestBucket?
+
   promptText String? // natural language for this rule for prompt file. prompt file is combination of these fields
 
   history RuleHistory[]
@@ -1767,6 +1770,13 @@ enum DigestDetailLevel {
   SUBJECT_ONLY
   ONE_LINE
   KEY_POINTS
+}
+
+/// Digest section override for a rule.
+enum DigestBucket {
+  TO_REPLY
+  FYI
+  NO_ACTION
 }
 
 enum ColdEmailSetting {

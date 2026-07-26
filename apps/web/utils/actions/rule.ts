@@ -10,6 +10,7 @@ import {
   enableDraftRepliesBody,
   enableMultiRuleSelectionBody,
   updateDraftReplyConfidenceBody,
+  updateRuleDigestBucketBody,
   deleteRuleBody,
   createRulesOnboardingBody,
   type CategoryConfig,
@@ -279,6 +280,23 @@ export const updateDraftReplyConfidenceAction = actionClient
       data: { draftReplyConfidence: confidence },
     });
   });
+
+export const updateRuleDigestBucketAction = actionClient
+  .metadata({ name: "updateRuleDigestBucket" })
+  .inputSchema(updateRuleDigestBucketBody)
+  .action(
+    async ({
+      ctx: { emailAccountId },
+      parsedInput: { ruleId, digestBucket },
+    }) => {
+      await prisma.rule.update({
+        where: { id: ruleId, emailAccountId },
+        data: { digestBucket },
+      });
+
+      return { success: true };
+    },
+  );
 
 export const deleteRuleAction = actionClient
   .metadata({ name: "deleteRule" })

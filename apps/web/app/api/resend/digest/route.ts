@@ -22,7 +22,12 @@ import {
   DIGEST_BUCKET_ORDER,
   getDigestBucket,
 } from "@/utils/digest/action-buckets";
+import {
+  getRecipientRole,
+  sortDigestItemsByDateDesc,
+} from "@/utils/digest/digest-item-meta";
 import { createEmailProvider } from "@/utils/email/provider";
+import { getEmailUrlForOptionalMessage } from "@/utils/url";
 import { sleep } from "@/utils/sleep";
 import { withQstashOrInternal } from "@/utils/qstash";
 
@@ -175,6 +180,7 @@ async function sendEmail({
                     select: {
                       name: true,
                       systemType: true,
+                      digestBucket: true,
                     },
                   },
                 },
@@ -269,9 +275,7 @@ async function sendEmail({
           return;
         }
 
-        const bucket = getDigestBucket(
-          item.action?.executedRule?.rule?.systemType,
-        );
+        const bucket = getDigestBucket(item.action?.executedRule?.rule);
 
         if (!acc[bucket]) {
           acc[bucket] = [];
@@ -297,6 +301,17 @@ async function sendEmail({
             content: contentResult.data.content,
             from: extractNameFromEmail(message?.headers?.from || ""),
             subject: message?.headers?.subject || "",
+            date: message.headers.date || message.date || undefined,
+            role: getRecipientRole(message, emailAccount.email),
+            url:
+              message.externalUrl ||
+              getEmailUrlForOptionalMessage({
+                messageId: message.id,
+                threadId: message.threadId,
+                emailAddress: emailAccount.email,
+                provider: emailAccount.account.provider,
+              }) ||
+              undefined,
           });
         } else {
           logger.warn("Failed to validate digest content structure", {
@@ -315,6 +330,12 @@ async function sendEmail({
       if (!executedRulesByRule[bucket]?.length) {
         delete executedRulesByRule[bucket];
       }
+    }
+
+    // Newest first inside each section.
+    for (const bucket of Object.keys(executedRulesByRule)) {
+      const items = executedRulesByRule[bucket];
+      if (items) sortDigestItemsByDateDesc(items);
     }
 
     if (Object.keys(executedRulesByRule).length === 0) {

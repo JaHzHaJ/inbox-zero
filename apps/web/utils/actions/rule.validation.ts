@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   ActionType,
   CategoryFilterType,
+  DigestBucket,
   DraftReplyConfidence,
   LogicalOperator,
   SystemType,
@@ -320,6 +321,14 @@ export const updateDraftReplyConfidenceBody = z.object({
 });
 export type UpdateDraftReplyConfidenceBody = z.infer<
   typeof updateDraftReplyConfidenceBody
+>;
+
+export const updateRuleDigestBucketBody = z.object({
+  ruleId: z.string(),
+  digestBucket: z.nativeEnum(DigestBucket).nullable(),
+});
+export type UpdateRuleDigestBucketBody = z.infer<
+  typeof updateRuleDigestBucketBody
 >;
 
 const categoryAction = z.enum([
