@@ -28,6 +28,7 @@ import {
   splitRecipientList,
 } from "@/utils/email";
 import { isCalendarInvite } from "@/utils/parse/calender-event";
+import { isAutoReplyMessage } from "@/utils/auto-reply-detection";
 import { checkSenderReplyHistory } from "@/utils/reply-tracker/check-sender-reply-history";
 import {
   isAddressLikeEmailPattern,
@@ -734,7 +735,7 @@ async function filterConversationStatusRulesWithMetadata<
 ): Promise<{
   rules: T[];
   filteredRuleNames: string[];
-  filterReason?: "no_reply_sender" | "reply_history_threshold";
+  filterReason?: "auto_reply" | "no_reply_sender" | "reply_history_threshold";
 }> {
   const log = logger.with({ module: MODULE });
   const toReplyRule = potentialMatches.find(
@@ -760,6 +761,16 @@ async function filterConversationStatusRulesWithMetadata<
     return potentialMatches.filter(
       (r) => !isConversationStatusType(r.systemType),
     );
+  }
+
+  // An out-of-office or bounce must not re-classify the conversation: the
+  // thread keeps the status earned by the real business message.
+  if (isAutoReplyMessage(message)) {
+    return {
+      rules: filteredOutConversationStatusRules(),
+      filteredRuleNames: filteredConversationRuleNames,
+      filterReason: "auto_reply",
+    };
   }
 
   if (

@@ -19,6 +19,7 @@ import type { EmailProvider } from "@/utils/email/types";
 import type { DraftAttribution } from "@/utils/ai/reply/draft-attribution";
 import type { DraftContextMetadata } from "@/utils/ai/reply/draft-context-metadata";
 import { isDraftReplyActionType } from "@/utils/actions/draft-reply";
+import { isAutoReplyMessage } from "@/utils/auto-reply-detection";
 import type { SelectedAttachment } from "@/utils/attachments/source-schema";
 
 const MODULE = "choose-args";
@@ -55,11 +56,23 @@ export async function getActionItemsWithAiArgs({
   isTest?: boolean;
 }): Promise<ActionWithDraftAttribution[]> {
   const log = logger.with({ module: MODULE });
+  // Never draft a reply to an automatic message (out-of-office, bounce):
+  // the draft would target the auto-responder, not the real correspondent.
+  // The draft actions are then stripped by filterIncompleteDraftActions.
+  const isAutoReply = isAutoReplyMessage(message);
+  if (isAutoReply) {
+    log.info("Skipping draft generation for auto-reply message", {
+      threadId: message.threadId,
+      subject: message.headers.subject,
+    });
+  }
   // Draft content is handled via its own AI call
   // We provide a lot more context to the AI to draft the content
-  const draftReplyActions = selectedRule.actions.filter(
-    (action) => isDraftReplyActionType(action.type) && !action.content,
-  );
+  const draftReplyActions = isAutoReply
+    ? []
+    : selectedRule.actions.filter(
+        (action) => isDraftReplyActionType(action.type) && !action.content,
+      );
 
   let draft: string | null = null;
   let draftConfidence: DraftReplyConfidence | null = null;

@@ -217,8 +217,9 @@ async function generateDraftContent(
     date: internalDateToDate(msg.internalDate),
     threadId: msg.threadId,
     ...getEmailForLLM(msg, {
-      // give more context for the message we're processing
-      maxLength: index === threadMessages.length - 1 ? 2000 : 500,
+      // give more context for the message we're processing; earlier messages
+      // keep enough body for the draft to rest on the original business email
+      maxLength: index === threadMessages.length - 1 ? 2000 : 1500,
       extractReply: true,
       removeForwarded: false,
       includeLinkUrls: true,
