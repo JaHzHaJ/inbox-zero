@@ -167,7 +167,7 @@ export default function DigestEmail(props: DigestEmailProps) {
                   <span className={`${colors.text} font-semibold`}>
                     {ruleNames?.[categoryKey] || categoryKey}
                   </span>
-                  {" from "}
+                  {" de : "}
                   {categoryData.senders.map((sender, index) => {
                     if (index === 0) {
                       return sender;
@@ -175,7 +175,7 @@ export default function DigestEmail(props: DigestEmailProps) {
                       return `, ${sender}`;
                     }
                   })}
-                  {categoryData.count > 5 && " and more"}
+                  {categoryData.count > 5 && " et plus"}
                 </Text>
               </div>
             </div>
@@ -192,7 +192,7 @@ export default function DigestEmail(props: DigestEmailProps) {
                         {item.subject}
                       </Text>
                       <Text className="text-[14px] text-gray-700 mt-[2px] mb-0">
-                        From:{" "}
+                        De :{" "}
                         <span className="font-medium text-gray-800">
                           {item.from}
                         </span>
@@ -223,7 +223,7 @@ export default function DigestEmail(props: DigestEmailProps) {
               <span className={`${colors.text} font-semibold`}>
                 {ruleNames?.[categoryKey] || categoryKey}
               </span>
-              {" from "}
+              {" de : "}
               {categoryData.senders.map((sender, index) => {
                 if (index === 0) {
                   return sender;
@@ -231,7 +231,7 @@ export default function DigestEmail(props: DigestEmailProps) {
                   return `, ${sender}`;
                 }
               })}
-              {categoryData.count > 5 && " and more"}
+              {categoryData.count > 5 && " et plus"}
             </Text>
           </div>
         </div>
@@ -263,10 +263,10 @@ export default function DigestEmail(props: DigestEmailProps) {
               </Text>
 
               <Heading className="my-4 text-4xl font-medium leading-tight">
-                Your Digest
+                Votre récap
               </Heading>
               <Text className="mb-8 text-lg leading-8">
-                Here's a summary of what's happened in your inbox.
+                Voici un résumé de ce qui s'est passé dans votre boîte mail.
               </Text>
             </Section>
 
@@ -289,10 +289,11 @@ export default function DigestEmail(props: DigestEmailProps) {
             ) : (
               <Section className="mb-8 text-center">
                 <Text className="text-gray-500 text-lg">
-                  No emails to summarize in this digest.
+                  Aucun mail à résumer dans ce récap.
                 </Text>
                 <Text className="text-gray-400 text-sm mt-2">
-                  We'll send you a summary when there are emails to report.
+                  Nous vous enverrons un résumé dès qu'il y aura des mails à
+                  signaler.
                 </Text>
               </Section>
             )}
@@ -586,21 +587,21 @@ function Footer({
   return (
     <Section className="mt-8 text-center text-sm text-gray-500">
       <Text className="m-0">
-        You're receiving this email because you enabled digest emails in your
-        Inbox Zero settings.
+        Vous recevez ce mail car vous avez activé le récap dans vos réglages
+        Inbox Zero.
       </Text>
       <div className="mt-[8px]">
         <Link
           href={`${baseUrl}/api/unsubscribe?token=${unsubscribeToken}`}
           className="text-gray-500 underline mr-[16px]"
         >
-          Unsubscribe
+          Se désabonner
         </Link>
         <Link
           href={`${baseUrl}/${emailAccountId}/automation?tab=settings`}
           className="text-gray-500 underline"
         >
-          Customize what you receive
+          Personnaliser ce que vous recevez
         </Link>
       </div>
     </Section>
@@ -628,21 +629,21 @@ export const generateDigestSubject = (props: DigestEmailProps): string => {
     .slice(0, 3);
 
   if (topCategories.length === 0) {
-    return "Your email digest";
+    return "Votre récap email";
   }
 
   if (topCategories.length === 1) {
     const { name, count } = topCategories[0];
-    return `Summary of ${count} ${name} email${count === 1 ? "" : "s"}`;
+    return `Récap : ${count} mail${count === 1 ? "" : "s"} « ${name} »`;
   }
 
   if (topCategories.length === 2) {
     const [first, second] = topCategories;
-    return `Summary of ${first.count} ${first.name} and ${second.count} ${second.name} emails`;
+    return `Récap : ${first.count} « ${first.name} » et ${second.count} « ${second.name} »`;
   }
 
   const [first, second, third] = topCategories;
-  return `Summary of ${first.count} ${first.name}, ${second.count} ${second.name} and ${third.count} ${third.name} emails`;
+  return `Récap : ${first.count} « ${first.name} », ${second.count} « ${second.name} » et ${third.count} « ${third.name} »`;
 };
 
 const normalizeCategoryData = (

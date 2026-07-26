@@ -77,6 +77,16 @@ describe("aiSummarizeEmailForDigest detail level", () => {
     expect(system).toContain("Do NOT mention the sender's name");
   });
 
+  it("always asks for a French summary, whatever the detail level", async () => {
+    const oneLine = await summarizeWith(DigestDetailLevel.ONE_LINE);
+    expect(oneLine).toContain("in French");
+
+    generateObjectMock.mockClear();
+
+    const keyPoints = await summarizeWith(DigestDetailLevel.KEY_POINTS);
+    expect(keyPoints).toContain("in French");
+  });
+
   it("uses the economy model, not the default one", async () => {
     await summarizeWith(DigestDetailLevel.KEY_POINTS);
 

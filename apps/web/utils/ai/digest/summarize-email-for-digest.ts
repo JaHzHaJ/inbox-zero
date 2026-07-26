@@ -54,6 +54,7 @@ I will provide you with:
 - The email content
 
 Guidelines for summarizing the email:
+- Write the summary in French, regardless of the language the email is written in.
 - If the email is spam, promotional, or irrelevant, return "null".
 - Do NOT mention the sender's name or start with phrases like "This is a message from X" or "This email from Y" - the sender information is already displayed separately.
 - DO NOT use meta-commentary like "highlights", "discusses", "reflects on", "mentions", or "talks about" - just state the content directly.
