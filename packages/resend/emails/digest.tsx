@@ -130,6 +130,19 @@ export default function DigestEmail(props: DigestEmailProps) {
     return categoryData && categoryData.count > 0;
   });
 
+  // One chip per non-empty section, in section order, for the header summary.
+  const sectionSummaries = Object.keys(digestData).flatMap((key) => {
+    const categoryData = normalizeCategoryData(key, digestData[key]);
+    if (!categoryData || categoryData.count === 0) return [];
+    return [
+      {
+        key,
+        label: ruleNames?.[key] || key,
+        count: categoryData.count,
+      },
+    ];
+  });
+
   const renderEmailContent = (item: DigestItem) => {
     if (!item.content) return null;
 
@@ -178,24 +191,18 @@ export default function DigestEmail(props: DigestEmailProps) {
       return (
         <Section className="mb-[8px]" id={categoryKey}>
           <div className="mb-[8px]">
-            <div className="text-left mb-[8px]">
-              <div className="px-4 py-3">
-                <Text className="text-[16px] text-gray-700 mt-0 mb-0">
+            {/* Bandeau de section : titre colore + pastille de compte, sans
+                enumeration d'expediteurs (deja portee par chaque item). */}
+            <div className="text-left mb-[8px] px-[4px] pt-[8px]">
+              <Text className="mt-0 mb-0">
+                <span className={`${colors.text} text-[18px] font-bold`}>
+                  {ruleNames?.[categoryKey] || categoryKey}
+                </span>
+                <span className="ml-[10px] rounded-[10px] bg-gray-100 px-[8px] py-[2px] text-[12px] font-semibold text-gray-600 align-middle">
                   {categoryData.count}{" "}
-                  <span className={`${colors.text} font-semibold`}>
-                    {ruleNames?.[categoryKey] || categoryKey}
-                  </span>
-                  {" de : "}
-                  {categoryData.senders.map((sender, index) => {
-                    if (index === 0) {
-                      return sender;
-                    } else {
-                      return `, ${sender}`;
-                    }
-                  })}
-                  {categoryData.count > 5 && " et plus"}
-                </Text>
-              </div>
+                  {categoryData.count === 1 ? "mail" : "mails"}
+                </span>
+              </Text>
             </div>
 
             <div
@@ -203,7 +210,7 @@ export default function DigestEmail(props: DigestEmailProps) {
             >
               {categoryData.items.map((item, index) => (
                 <div key={index}>
-                  <div className="p-[20px]">
+                  <div className="p-[16px]">
                     {/* Email Header */}
                     <div className="mb-[12px]">
                       <Text className="text-[16px] font-bold text-gray-900 mt-0 mb-0">
@@ -254,7 +261,7 @@ export default function DigestEmail(props: DigestEmailProps) {
 
                   {/* Separator line - don't show after the last item */}
                   {index < categoryData.items.length - 1 && (
-                    <Hr className="border-solid border-gray-200 my-0 mx-[20px]" />
+                    <Hr className="border-solid border-gray-200 my-0 mx-[16px]" />
                   )}
                 </div>
               ))}
@@ -267,20 +274,14 @@ export default function DigestEmail(props: DigestEmailProps) {
       return (
         <div className="mb-[4px]" id={categoryKey}>
           <div className="px-4 py-2">
-            <Text className="text-[16px] text-gray-700 mt-0 mb-0">
-              {categoryData.count}{" "}
-              <span className={`${colors.text} font-semibold`}>
+            <Text className="mt-0 mb-0">
+              <span className={`${colors.text} text-[16px] font-bold`}>
                 {ruleNames?.[categoryKey] || categoryKey}
               </span>
-              {" de : "}
-              {categoryData.senders.map((sender, index) => {
-                if (index === 0) {
-                  return sender;
-                } else {
-                  return `, ${sender}`;
-                }
-              })}
-              {categoryData.count > 5 && " et plus"}
+              <span className="ml-[8px] rounded-[10px] bg-gray-100 px-[8px] py-[2px] text-[12px] font-semibold text-gray-600 align-middle">
+                {categoryData.count}{" "}
+                {categoryData.count === 1 ? "mail" : "mails"}
+              </span>
             </Text>
           </div>
         </div>
@@ -314,9 +315,25 @@ export default function DigestEmail(props: DigestEmailProps) {
               <Heading className="my-4 text-4xl font-medium leading-tight">
                 Votre récap
               </Heading>
-              <Text className="mb-8 text-lg leading-8">
+              <Text className="mb-4 text-lg leading-8">
                 Voici un résumé de ce qui s'est passé dans votre boîte mail.
               </Text>
+              {sectionSummaries.length > 0 && (
+                <Text className="mb-8 mt-0 text-center">
+                  {sectionSummaries.map((summary) => {
+                    const chipColors =
+                      colorClasses[categoryColors[summary.key] || "gray"];
+                    return (
+                      <span
+                        key={summary.key}
+                        className={`${chipColors.bgAccent} ${chipColors.text} mr-[6px] rounded-[12px] px-[10px] py-[3px] text-[13px] font-semibold`}
+                      >
+                        {summary.label} {summary.count}
+                      </span>
+                    );
+                  })}
+                </Text>
+              )}
             </Section>
 
             {hasItems ? (
@@ -657,42 +674,53 @@ function Footer({
   );
 }
 
+/** Ordre et libellés courts des sections dans l'objet du mail. */
+const SUBJECT_SECTION_ORDER = ["toReply", "fyi", "noAction"];
+const SUBJECT_SECTION_LABELS: Record<string, string> = {
+  toReply: "à répondre",
+  fyi: "pour information",
+  noAction: "sans action",
+};
+
 export const generateDigestSubject = (props: DigestEmailProps): string => {
   const { ruleNames, ...digestData } = props;
 
-  const categoriesWithCounts: Array<{ name: string; count: number }> = [];
+  const topCategories: Array<{ key: string; name: string; count: number }> = [];
 
   Object.keys(digestData).forEach((key) => {
     const categoryData = normalizeCategoryData(key, digestData[key]);
     if (categoryData && categoryData.count > 0) {
-      const displayName = ruleNames?.[key] || key;
-      categoriesWithCounts.push({
-        name: displayName,
+      topCategories.push({
+        key,
+        name: ruleNames?.[key] || key,
         count: categoryData.count,
       });
     }
   });
 
-  const topCategories = categoriesWithCounts
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 3);
-
   if (topCategories.length === 0) {
     return "Votre récap email";
   }
 
-  if (topCategories.length === 1) {
-    const { name, count } = topCategories[0];
-    return `Récap : ${count} mail${count === 1 ? "" : "s"} « ${name} »`;
-  }
+  // Same order as the body sections, short lowercase labels: the subject
+  // must read as a mirror of the email, not as a volume ranking.
+  const orderedKeys = [
+    ...SUBJECT_SECTION_ORDER.filter((key) =>
+      topCategories.some((category) => category.key === key),
+    ),
+    ...topCategories
+      .map((category) => category.key)
+      .filter((key) => !SUBJECT_SECTION_ORDER.includes(key)),
+  ];
 
-  if (topCategories.length === 2) {
-    const [first, second] = topCategories;
-    return `Récap : ${first.count} « ${first.name} » et ${second.count} « ${second.name} »`;
-  }
+  const parts = orderedKeys.map((key) => {
+    const category = topCategories.find((c) => c.key === key);
+    if (!category) return "";
+    const label = SUBJECT_SECTION_LABELS[key] ?? category.name;
+    return `${category.count} ${label}`;
+  });
 
-  const [first, second, third] = topCategories;
-  return `Récap : ${first.count} « ${first.name} », ${second.count} « ${second.name} » et ${third.count} « ${third.name} »`;
+  return `Récap : ${parts.filter(Boolean).join(" · ")}`;
 };
 
 const normalizeCategoryData = (
