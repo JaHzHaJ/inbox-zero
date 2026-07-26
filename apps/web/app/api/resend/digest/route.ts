@@ -15,10 +15,13 @@ import {
   storedDigestContentSchema,
   type Digest,
 } from "./validation";
-import { DigestStatus, SystemType } from "@/generated/prisma/enums";
+import { DigestStatus } from "@/generated/prisma/enums";
 import { extractNameFromEmail } from "../../../../utils/email";
-import { getRuleName } from "@/utils/rule/consts";
-import camelCase from "lodash/camelCase";
+import {
+  DIGEST_BUCKET_LABELS,
+  DIGEST_BUCKET_ORDER,
+  getDigestBucket,
+} from "@/utils/digest/action-buckets";
 import { createEmailProvider } from "@/utils/email/provider";
 import { sleep } from "@/utils/sleep";
 import { withQstashOrInternal } from "@/utils/qstash";
@@ -171,6 +174,7 @@ async function sendEmail({
                   rule: {
                     select: {
                       name: true,
+                      systemType: true,
                     },
                   },
                 },
@@ -248,8 +252,11 @@ async function sendEmail({
     // Create a message lookup map for O(1) access
     const messageMap = new Map(messages.map((m) => [m.id, m]));
 
-    // Map of rules camelCase -> ruleName
-    const ruleNameMap = new Map<string, string>();
+    // Seeded in display order: the email template iterates Object.keys, so
+    // insertion order decides the section order. Empty buckets are pruned below.
+    const initialBuckets = Object.fromEntries(
+      DIGEST_BUCKET_ORDER.map((bucket) => [bucket, []]),
+    ) as Digest;
 
     // Transform and group in a single pass
     const executedRulesByRule = pendingDigests.reduce((acc, digest) => {
@@ -262,17 +269,12 @@ async function sendEmail({
           return;
         }
 
-        const ruleName =
-          item.action?.executedRule?.rule?.name ||
-          getRuleName(SystemType.COLD_EMAIL);
+        const bucket = getDigestBucket(
+          item.action?.executedRule?.rule?.systemType,
+        );
 
-        const ruleNameKey = camelCase(ruleName);
-        if (!ruleNameMap.has(ruleNameKey)) {
-          ruleNameMap.set(ruleNameKey, ruleName);
-        }
-
-        if (!acc[ruleNameKey]) {
-          acc[ruleNameKey] = [];
+        if (!acc[bucket]) {
+          acc[bucket] = [];
         }
 
         let parsedContent: unknown;
@@ -291,7 +293,7 @@ async function sendEmail({
           storedDigestContentSchema.safeParse(parsedContent);
 
         if (contentResult.success) {
-          acc[ruleNameKey].push({
+          acc[bucket].push({
             content: contentResult.data.content,
             from: extractNameFromEmail(message?.headers?.from || ""),
             subject: message?.headers?.subject || "",
@@ -305,7 +307,15 @@ async function sendEmail({
         }
       });
       return acc;
-    }, {} as Digest);
+    }, initialBuckets);
+
+    // Drop the seeded buckets that never received an item, so the email
+    // doesn't render empty sections.
+    for (const bucket of DIGEST_BUCKET_ORDER) {
+      if (!executedRulesByRule[bucket]?.length) {
+        delete executedRulesByRule[bucket];
+      }
+    }
 
     if (Object.keys(executedRulesByRule).length === 0) {
       logger.info("No executed rules found, skipping digest email");
@@ -324,7 +334,7 @@ async function sendEmail({
       userEmail: emailAccount.email,
       unsubscribeToken: token,
       date: new Date(),
-      ruleNames: Object.fromEntries(ruleNameMap),
+      ruleNames: DIGEST_BUCKET_LABELS,
       itemsByRule: executedRulesByRule,
       logger,
     });

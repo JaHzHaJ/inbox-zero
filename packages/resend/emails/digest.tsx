@@ -100,7 +100,10 @@ export default function DigestEmail(props: DigestEmailProps) {
     calendar: "amber",
     coldEmail: "gray",
     notification: "pink",
+    // Action-required buckets
     toReply: "red",
+    fyi: "blue",
+    noAction: "gray",
   };
 
   // Check if there are any items to display
