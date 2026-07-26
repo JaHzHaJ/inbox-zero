@@ -146,6 +146,9 @@ async function sendEmail({
   const digestScheduleProgression = digestScheduleData
     ? getDigestScheduleProgression(digestScheduleData, now)
     : null;
+  // Le creneau est reserve en amont de l'envoi : on doit pouvoir le rendre si
+  // l'envoi echoue, sinon la journee est perdue.
+  let claimedSchedule = false;
 
   if (!force) {
     if (!digestScheduleData) {
@@ -159,6 +162,33 @@ async function sendEmail({
       });
       return { success: true, message: "Digest schedule is not due yet" };
     }
+
+    if (!digestScheduleProgression) {
+      logger.error("Missing digest schedule progression");
+      return { success: false, message: "Digest schedule is not usable" };
+    }
+
+    // Reserve le creneau AVANT d'envoyer. Plusieurs postes partagent la meme
+    // base : sans cela, ils passent tous la verification ci-dessus et envoient
+    // chacun leur recap. La condition porte sur la valeur exacte relue, ce qui
+    // en fait une comparaison-et-echange : un seul poste obtient count = 1.
+    const claim = await prisma.schedule.updateMany({
+      where: {
+        id: digestScheduleData.id,
+        emailAccountId,
+        nextOccurrenceAt: digestScheduleData.nextOccurrenceAt,
+      },
+      data: digestScheduleProgression,
+    });
+
+    if (claim.count === 0) {
+      logger.info("Digest slot already claimed by another machine", {
+        nextOccurrenceAt: digestScheduleData.nextOccurrenceAt,
+      });
+      return { success: true, message: "Digest slot already claimed" };
+    }
+
+    claimedSchedule = true;
   }
 
   const pendingDigests = await prisma.digest.findMany({
@@ -210,16 +240,7 @@ async function sendEmail({
     // Return early if no digests were found, unless force is true
     if (pendingDigests.length === 0) {
       if (!force) {
-        if (digestScheduleData && digestScheduleProgression) {
-          await prisma.schedule.update({
-            where: {
-              id: digestScheduleData.id,
-              emailAccountId,
-            },
-            data: digestScheduleProgression,
-          });
-        }
-
+        // Le creneau a deja ete consomme par la reservation : rien a avancer.
         return { success: true, message: "No digests to process" };
       }
       // When force is true, send an empty digest to indicate the system is working
@@ -365,17 +386,7 @@ async function sendEmail({
     // Only update database if email sending succeeded
     // Use a transaction to ensure atomicity - all updates succeed or none are applied
     await prisma.$transaction([
-      ...(!force && digestScheduleData && digestScheduleProgression
-        ? [
-            prisma.schedule.update({
-              where: {
-                id: digestScheduleData.id,
-                emailAccountId,
-              },
-              data: digestScheduleProgression,
-            }),
-          ]
-        : []),
+      // Le planning a deja ete avance par la reservation du creneau.
       // Mark only the processed digests as sent
       prisma.digest.updateMany({
         where: {
@@ -409,6 +420,26 @@ async function sendEmail({
         status: DigestStatus.FAILED,
       },
     });
+
+    // Rend le creneau reserve : sans cela le recap du jour serait definitivement
+    // saute. Les digests de cette tentative restent en FAILED (comportement
+    // amont), mais la passe suivante enverra ceux constitues entre-temps.
+    if (claimedSchedule && digestScheduleData) {
+      await prisma.schedule
+        .updateMany({
+          where: { id: digestScheduleData.id, emailAccountId },
+          data: {
+            lastOccurrenceAt: digestScheduleData.lastOccurrenceAt,
+            nextOccurrenceAt: digestScheduleData.nextOccurrenceAt,
+          },
+        })
+        .catch((restoreError) => {
+          logger.error("Failed to restore digest schedule slot", {
+            error: restoreError,
+          });
+        });
+    }
+
     logger.error("Error sending digest email", { error });
     captureException(error);
     throw new SafeError("Error sending digest email", 500);
