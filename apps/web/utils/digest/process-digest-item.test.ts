@@ -60,7 +60,9 @@ const body = {
 const lockKey = "digest-item:email-account-1:action-1";
 
 /** Cable le chemin nominal : compte trouve, acces OK, regle nommee, digest vide. */
-function setupHappyPath(detailLevel = DigestDetailLevel.KEY_POINTS) {
+function setupHappyPath(
+  detailLevel: DigestDetailLevel = DigestDetailLevel.KEY_POINTS,
+) {
   vi.mocked(acquireOwnedLock).mockResolvedValue("lock-token-1");
   vi.mocked(markOwnedLockProcessed).mockResolvedValue(true);
   vi.mocked(clearOwnedLock).mockResolvedValue(true);
