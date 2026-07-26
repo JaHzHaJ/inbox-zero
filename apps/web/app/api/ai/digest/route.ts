@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { digestBody } from "./validation";
-import { DigestStatus } from "@/generated/prisma/enums";
+import { DigestDetailLevel, DigestStatus } from "@/generated/prisma/enums";
 import type { Logger } from "@/utils/logger";
 import prisma from "@/utils/prisma";
 import { aiSummarizeEmailForDigest } from "@/utils/ai/digest/summarize-email-for-digest";
@@ -55,6 +55,26 @@ export const POST = withError(
         return new NextResponse("OK", { status: 200 });
       }
 
+      const detailLevel = await getDigestDetailLevel({ emailAccountId });
+
+      // Subject-only digests are rendered from the message headers at send
+      // time, so there is nothing to summarize: skip the model call and don't
+      // spend a slot of the 24h summary budget on it.
+      if (detailLevel === DigestDetailLevel.SUBJECT_ONLY) {
+        logger.info("Storing digest item without a summary", { detailLevel });
+
+        await upsertDigest({
+          messageId: message.id || "",
+          threadId: message.threadId || "",
+          emailAccountId,
+          actionId,
+          content: { content: "" },
+          logger,
+        });
+
+        return new NextResponse("OK", { status: 200 });
+      }
+
       const summaryReservation = await reserveDigestSummarySlot({
         emailAccountId,
         maxSummariesPer24h: env.DIGEST_MAX_SUMMARIES_PER_24H,
@@ -72,6 +92,7 @@ export const POST = withError(
         const summary = await aiSummarizeEmailForDigest({
           ruleName,
           emailAccount,
+          detailLevel,
           messageToSummarize: {
             ...message,
             to: message.to || "",
@@ -252,6 +273,19 @@ async function upsertDigest({
     logger.error("Failed to upsert digest", { error });
     throw error;
   }
+}
+
+async function getDigestDetailLevel({
+  emailAccountId,
+}: {
+  emailAccountId: string;
+}): Promise<DigestDetailLevel> {
+  const emailAccount = await prisma.emailAccount.findUnique({
+    where: { id: emailAccountId },
+    select: { digestDetailLevel: true },
+  });
+
+  return emailAccount?.digestDetailLevel ?? DigestDetailLevel.KEY_POINTS;
 }
 
 async function getRuleNameByExecutedAction(

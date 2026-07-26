@@ -19,10 +19,11 @@ import { MultiSelectFilter } from "@/components/MultiSelectFilter";
 import { prefixPath } from "@/utils/path";
 import { updateDigestEmailDeliveryAction } from "@/utils/actions/messaging-channels";
 import {
+  updateDigestDetailLevelAction,
   updateDigestItemsAction,
   updateDigestScheduleAction,
 } from "@/utils/actions/settings";
-import { ActionType } from "@/generated/prisma/enums";
+import { ActionType, DigestDetailLevel } from "@/generated/prisma/enums";
 import { useAccount } from "@/providers/EmailAccountProvider";
 import type { GetDigestScheduleResponse } from "@/app/api/user/digest-schedule/route";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -45,9 +46,16 @@ const digestSettingsSchema = z.object({
   schedule: z.string().min(1, "Please select a frequency"),
   dayOfWeek: z.string().min(1, "Please select a day"),
   time: z.string().min(1, "Please select a time"),
+  detailLevel: z.enum(DigestDetailLevel),
 });
 
 type DigestSettingsFormValues = z.infer<typeof digestSettingsSchema>;
+
+const detailLevels = [
+  { value: DigestDetailLevel.SUBJECT_ONLY, label: "Subject and sender only" },
+  { value: DigestDetailLevel.ONE_LINE, label: "One-line summary" },
+  { value: DigestDetailLevel.KEY_POINTS, label: "Key points" },
+];
 
 const frequencies = [
   { value: "daily", label: "Day" },
@@ -86,8 +94,15 @@ export function DigestSettingsForm({
     mutate: mutateSchedule,
   } = useSWR<GetDigestScheduleResponse>("/api/user/digest-schedule");
 
-  const isLoading = rulesLoading || scheduleLoading;
-  const error = rulesError || scheduleError;
+  const {
+    data: emailAccount,
+    isLoading: accountLoading,
+    error: accountError,
+    mutate: mutateAccount,
+  } = useEmailAccountFull();
+
+  const isLoading = rulesLoading || scheduleLoading || accountLoading;
+  const error = rulesError || scheduleError || accountError;
 
   const [selectedDigestItems, setSelectedDigestItems] = useState<Set<string>>(
     new Set(),
@@ -106,6 +121,7 @@ export function DigestSettingsForm({
       schedule: "daily",
       dayOfWeek: "1",
       time: "09:00",
+      detailLevel: DigestDetailLevel.KEY_POINTS,
     },
   });
 
@@ -141,6 +157,21 @@ export function DigestSettingsForm({
     },
   );
 
+  const { execute: executeDetailLevel } = useAction(
+    updateDigestDetailLevelAction.bind(null, emailAccountId),
+    {
+      onSuccess: () => {
+        mutateAccount();
+      },
+      onError: (error) => {
+        toastError({
+          title: "Error updating digest detail level",
+          description: getActionErrorMessage(error.error),
+        });
+      },
+    },
+  );
+
   // Initialize selected items and form data from API responses
   useEffect(() => {
     if (rules && scheduleData) {
@@ -160,9 +191,11 @@ export function DigestSettingsForm({
       reset({
         selectedItems,
         ...initialScheduleProps,
+        detailLevel:
+          emailAccount?.digestDetailLevel ?? DigestDetailLevel.KEY_POINTS,
       });
     }
-  }, [rules, scheduleData, reset]);
+  }, [rules, scheduleData, emailAccount, reset]);
 
   // Update form when selectedDigestItems changes
   useEffect(() => {
@@ -212,11 +245,12 @@ export function DigestSettingsForm({
         timeOfDay,
       };
 
-      // Execute both updates
+      // Execute all updates
       try {
         await Promise.all([
           executeItems({ ruleDigestPreferences }),
           executeSchedule(scheduleUpdateData),
+          executeDetailLevel({ detailLevel: data.detailLevel }),
         ]);
         toastSuccess({
           description: "Your digest settings have been updated!",
@@ -229,7 +263,7 @@ export function DigestSettingsForm({
         });
       }
     },
-    [rules, executeItems, executeSchedule, onSuccess],
+    [rules, executeItems, executeSchedule, executeDetailLevel, onSuccess],
   );
 
   // Create options for MultiSelectFilter
@@ -260,6 +294,34 @@ export function DigestSettingsForm({
                   maxDisplayedValues={3}
                 />
               </div>
+            </div>
+
+            <div>
+              <Label htmlFor="detail-level-select">Level of detail</Label>
+              <div className="mt-3">
+                <Select
+                  value={watchedValues.detailLevel}
+                  onValueChange={(val) =>
+                    setValue("detailLevel", val as DigestDetailLevel)
+                  }
+                >
+                  <SelectTrigger id="detail-level-select">
+                    {detailLevels.find(
+                      (d) => d.value === watchedValues.detailLevel,
+                    )?.label ?? "Select..."}
+                  </SelectTrigger>
+                  <SelectContent>
+                    {detailLevels.map((d) => (
+                      <SelectItem key={d.value} value={d.value}>
+                        {d.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <MutedText className="mt-2">
+                Subject and sender only skips the AI summary entirely.
+              </MutedText>
             </div>
 
             <div>

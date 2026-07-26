@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Frequency } from "@/generated/prisma/enums";
+import { DigestDetailLevel, Frequency } from "@/generated/prisma/enums";
 import { DEFAULT_PROVIDER, Provider } from "@/utils/llms/config";
 import { SENSITIVE_DATA_POLICIES } from "@/utils/dlp/sensitive-content";
 
@@ -56,3 +56,10 @@ export const toggleDigestBody = z.object({
   timeOfDay: z.coerce.date().optional(),
 });
 export type ToggleDigestBody = z.infer<typeof toggleDigestBody>;
+
+export const updateDigestDetailLevelBody = z.object({
+  detailLevel: z.enum(DigestDetailLevel),
+});
+export type UpdateDigestDetailLevelBody = z.infer<
+  typeof updateDigestDetailLevelBody
+>;

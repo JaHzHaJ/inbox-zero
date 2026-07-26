@@ -167,7 +167,8 @@ model EmailAccount {
   followUpNeedsReplyDays    Float?
   followUpAutoDraftEnabled  Boolean @default(true)
 
-  digestSendEmail     Boolean   @default(true)
+  digestSendEmail     Boolean           @default(true)
+  digestDetailLevel   DigestDetailLevel @default(KEY_POINTS)
   digestSchedule      Schedule?
   learnedWritingStyle String?
 
@@ -1760,6 +1761,14 @@ enum AttachmentSourceType {
 }
 
 // @deprecated - No longer used
+/// How much detail each digest entry carries.
+/// SUBJECT_ONLY needs no AI call: sender and subject come from the message headers.
+enum DigestDetailLevel {
+  SUBJECT_ONLY
+  ONE_LINE
+  KEY_POINTS
+}
+
 enum ColdEmailSetting {
   DISABLED
   LIST

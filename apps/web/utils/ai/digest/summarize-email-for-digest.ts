@@ -6,6 +6,7 @@ import { stringifyEmailSimple } from "@/utils/stringify-email";
 import { getModelForUseCase, LlmUseCase } from "@/utils/llms/use-cases";
 import { createGenerateObject } from "@/utils/llms";
 import { getUserInfoPrompt } from "@/utils/ai/helpers";
+import { DigestDetailLevel } from "@/generated/prisma/enums";
 
 const logger = createScopedLogger("summarize-digest-email");
 
@@ -14,13 +15,29 @@ const schema = z.object({
 });
 type AISummarizeResult = z.infer<typeof schema>;
 
+/**
+ * SUBJECT_ONLY never reaches this function - the caller skips the model call
+ * entirely - but it is handled here so the mapping stays total.
+ */
+function getDetailLevelGuidelines(detailLevel: DigestDetailLevel): string {
+  if (detailLevel === DigestDetailLevel.KEY_POINTS) {
+    return "- Aim for 1-5 key points, separated by newlines as described above.";
+  }
+
+  return `- Write exactly ONE sentence of at most 20 words, on a single line.
+- Keep only the single most important point and drop everything else.
+- Do NOT use newlines. This overrides the guidance above about separating multiple items.`;
+}
+
 export async function aiSummarizeEmailForDigest({
   ruleName,
   emailAccount,
+  detailLevel = DigestDetailLevel.KEY_POINTS,
   messageToSummarize,
 }: {
   ruleName: string;
   emailAccount: EmailAccountWithAI & { name: string | null };
+  detailLevel?: DigestDetailLevel;
   messageToSummarize: EmailForLLM;
 }): Promise<AISummarizeResult | null> {
   // If messageToSummarize somehow is null/undefined, default to null.
@@ -65,6 +82,9 @@ Guidelines for summarizing the email:
   • Use newlines if there are multiple action items or pieces of information
 - Only include human-relevant and human-readable information.
 - Exclude opaque technical identifiers like account IDs, payment IDs, tracking tokens, or long alphanumeric strings that aren't meaningful to users.
+
+Length requested by the user for this digest:
+${getDetailLevelGuidelines(detailLevel)}
 `;
 
   const prompt = `

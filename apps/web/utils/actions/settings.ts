@@ -8,6 +8,7 @@ import {
   saveDigestScheduleBody,
   updateDigestItemsBody,
   toggleDigestBody,
+  updateDigestDetailLevelBody,
 } from "@/utils/actions/settings.validation";
 import { DEFAULT_PROVIDER, Provider } from "@/utils/llms/config";
 import prisma from "@/utils/prisma";
@@ -161,6 +162,18 @@ export const updateDigestScheduleAction = actionClient
       where: { emailAccountId },
       create,
       update,
+    });
+
+    return { success: true };
+  });
+
+export const updateDigestDetailLevelAction = actionClient
+  .metadata({ name: "updateDigestDetailLevel" })
+  .inputSchema(updateDigestDetailLevelBody)
+  .action(async ({ ctx: { emailAccountId }, parsedInput: { detailLevel } }) => {
+    await prisma.emailAccount.update({
+      where: { id: emailAccountId },
+      data: { digestDetailLevel: detailLevel },
     });
 
     return { success: true };
