@@ -110,6 +110,11 @@ qa/browser-flows/results/*
 .claude/scheduled_tasks.lock
 .claude/worktrees/
 
+# journaux et sorties d'execution des scripts « Gestion Mails » (poste local)
+.claude/*.log
+.claude/catch-up-last.json
+.claude/digest-send-last.json
+
 # eval reports
 eval-results/
 
