@@ -287,6 +287,11 @@ async function listMessagesSince({
       after,
       maxResults: Math.min(CATCH_UP_PAGE_SIZE, maxMessages - messages.length),
       pageToken,
+      // Indispensable : processHistoryForUser ecarte tout message qui n'est ni
+      // dans la boite de reception ni dans les elements envoyes, SANS ecrire
+      // d'ExecutedRule. Lister toute la boite ferait donc revenir a chaque
+      // passe les mails ranges dans les sous-dossiers, indefiniment.
+      inboxOnly: true,
     });
     pageCount++;
 

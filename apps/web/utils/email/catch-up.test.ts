@@ -48,11 +48,14 @@ function makeMessage(
   } as ParsedMessage;
 }
 
+let getMessagesWithPagination: ReturnType<typeof vi.fn>;
+
 function mockProviderMessages(messages: ParsedMessage[]) {
+  getMessagesWithPagination = vi
+    .fn()
+    .mockResolvedValue({ messages, nextPageToken: undefined });
   vi.mocked(createEmailProvider).mockResolvedValue({
-    getMessagesWithPagination: vi
-      .fn()
-      .mockResolvedValue({ messages, nextPageToken: undefined }),
+    getMessagesWithPagination,
   } as never);
 }
 
@@ -115,6 +118,20 @@ describe("catchUpEmailAccount", () => {
       },
       select: { messageId: true },
     });
+  });
+
+  it("ne liste que la boite de reception", async () => {
+    mockProviderMessages([
+      makeMessage("msg-1", "thread-1", "2026-07-24T08:00:00Z"),
+    ]);
+
+    await catchUpEmailAccount(baseArgs());
+
+    // Sans inboxOnly, les mails ranges dans les sous-dossiers sont ecartes par
+    // processHistoryForUser sans ExecutedRule : ils reviennent a chaque passe.
+    expect(getMessagesWithPagination).toHaveBeenCalledWith(
+      expect.objectContaining({ inboxOnly: true }),
+    );
   });
 
   it("ne traite que le message le plus recent d'un fil", async () => {
