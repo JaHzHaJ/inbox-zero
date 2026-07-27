@@ -16,6 +16,7 @@ if not exist "%LOGDIR%" mkdir "%LOGDIR%" >nul 2>&1
 set "LOG=%LOGDIR%\digest-cron.log"
 set "CATCHUP_JSON=%LOGDIR%\catch-up-dernier.json"
 set "SEND_JSON=%LOGDIR%\envoi-dernier.json"
+set "PURGE_JSON=%LOGDIR%\purge-brouillons-dernier.json"
 
 rem Rotation par taille : au-dela de 5 Mo on archive (2 fichiers au maximum).
 for %%F in ("%LOG%") do if %%~zF GTR 5242880 move /y "%LOG%" "%LOG%.1" >nul 2>&1
@@ -83,6 +84,48 @@ if not "%SEND_RC%"=="0" (
   exit /b 1
 )
 
+rem --- 3. Purge des brouillons IA non utilises, UNE FOIS PAR JOUR ---
+rem Supprime les brouillons rediges par l'assistant, plus vieux que le delai
+rem regle dans l'application, et QUE L'UTILISATRICE N'A PAS MODIFIES. Inutile de
+rem le faire a chaque passage : un marqueur date evite les 22 appels quotidiens.
+rem La date passe par PowerShell : %date% depend des parametres regionaux.
+for /f %%d in ('powershell -NoProfile -Command "Get-Date -Format yyyy-MM-dd"') do set "AUJOURDHUI=%%d"
+set "MARQUEUR=%LOGDIR%\purge-brouillons-dernier.txt"
+set "DERNIERE="
+if exist "%MARQUEUR%" set /p DERNIERE=<"%MARQUEUR%"
+
+if "%DERNIERE%"=="%AUJOURDHUI%" goto :fin
+
+curl -s -m 290 -H "Authorization: Bearer %SECRET%" "http://localhost:3000/api/cron/draft-cleanup" -o "%PURGE_JSON%"
+set "PURGE_RC=%errorlevel%"
+
+echo [%date% %time%] purge des brouillons ^(curl %PURGE_RC%^) : >> "%LOG%"
+type "%PURGE_JSON%" >> "%LOG%"
+echo. >> "%LOG%"
+
+rem Marquer seulement en cas de succes : un echec doit etre retente au passage
+rem suivant, pas attendre le lendemain.
+if "%PURGE_RC%"=="0" echo %AUJOURDHUI%>"%MARQUEUR%"
+
+:fin
+rem --- 3. Purge des vieux brouillons IA, une fois par jour ---
+rem Supprime les brouillons NON MODIFIES plus vieux que le delai regle sur le
+rem compte (14 jours par defaut). Sans cela, les reponses jamais utilisees
+rem s'accumulent indefiniment dans le dossier Brouillons.
+rem Un seul passage par jour : inutile de le refaire toutes les 30 minutes.
+set "MARQUEUR=%LOGDIR%\purge-brouillons-%date:~-4%%date:~3,2%%date:~0,2%.ok"
+if exist "%MARQUEUR%" goto :fin
+
+curl -s -m 120 -H "Authorization: Bearer %SECRET%" "http://localhost:3000/api/cron/draft-cleanup" -o "%LOGDIR%\purge-brouillons-dernier.json"
+set "PURGE_RC=%errorlevel%"
+
+echo [%date% %time%] purge des brouillons ^(curl %PURGE_RC%^) : >> "%LOG%"
+type "%LOGDIR%\purge-brouillons-dernier.json" >> "%LOG%"
+echo. >> "%LOG%"
+
+if "%PURGE_RC%"=="0" echo ok > "%MARQUEUR%"
+
+:fin
 echo [%date% %time%] === termine === >> "%LOG%"
 endlocal
 exit /b 0

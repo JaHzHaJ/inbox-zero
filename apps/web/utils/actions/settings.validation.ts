@@ -57,6 +57,18 @@ export const toggleDigestBody = z.object({
 });
 export type ToggleDigestBody = z.infer<typeof toggleDigestBody>;
 
+/**
+ * Mise en forme des brouillons rediges par l'IA. Champs vides = on retombe sur
+ * la police par defaut du fournisseur, ce qui reste le comportement d'origine.
+ */
+export const updateDraftFormattingBody = z.object({
+  fontFamily: z.string().trim().max(200).nullable(),
+  fontSize: z.number().int().min(6).max(48).nullable(),
+});
+export type UpdateDraftFormattingBody = z.infer<
+  typeof updateDraftFormattingBody
+>;
+
 export const updateDigestDetailLevelBody = z.object({
   detailLevel: z.enum(DigestDetailLevel),
 });

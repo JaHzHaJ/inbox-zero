@@ -651,6 +651,9 @@ export class OutlookProvider implements EmailProvider {
       cc?: string;
       bcc?: string;
       attachments?: MailAttachment[];
+      fontFamily?: string | null;
+      fontSize?: number | null;
+      signatureHtml?: string | null;
     },
     userEmail: string,
     executedRule?: { id: string; threadId: string; emailAccountId: string },

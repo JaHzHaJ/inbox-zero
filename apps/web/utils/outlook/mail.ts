@@ -274,6 +274,9 @@ export async function draftEmail(
     cc?: string;
     bcc?: string;
     attachments?: Attachment[];
+    fontFamily?: string | null;
+    fontSize?: number | null;
+    signatureHtml?: string | null;
   },
   userEmails: string | string[],
   logger: Logger,
@@ -281,6 +284,9 @@ export async function draftEmail(
   const { html } = createOutlookReplyContent({
     textContent: args.content,
     message: originalEmail,
+    fontFamily: args.fontFamily,
+    fontSize: args.fontSize,
+    signatureHtml: args.signatureHtml,
   });
 
   const recipients = buildReplyAllRecipients(

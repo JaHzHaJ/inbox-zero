@@ -152,6 +152,10 @@ model EmailAccount {
   sensitiveDataPolicy       String?
   draftReplyConfidence      DraftReplyConfidence @default(ALL_EMAILS)
   draftCleanupDays          Int?                 @default(14)
+  // Mise en forme des brouillons rediges par l'IA. Null = police par defaut du
+  // fournisseur (Aptos 12pt cote Outlook), pour ne rien changer a l'existant.
+  draftFontFamily           String?
+  draftFontSize             Int?
   allowHiddenAiDraftLinks   Boolean              @default(false)
   rulesRevision             Int                  @default(0)
 

@@ -9,6 +9,7 @@ import {
   updateDigestItemsBody,
   toggleDigestBody,
   updateDigestDetailLevelBody,
+  updateDraftFormattingBody,
 } from "@/utils/actions/settings.validation";
 import { DEFAULT_PROVIDER, Provider } from "@/utils/llms/config";
 import prisma from "@/utils/prisma";
@@ -166,6 +167,28 @@ export const updateDigestScheduleAction = actionClient
 
     return { success: true };
   });
+
+export const updateDraftFormattingAction = actionClient
+  .metadata({ name: "updateDraftFormatting" })
+  .inputSchema(updateDraftFormattingBody)
+  .action(
+    async ({
+      ctx: { emailAccountId },
+      parsedInput: { fontFamily, fontSize },
+    }) => {
+      await prisma.emailAccount.update({
+        where: { id: emailAccountId },
+        // Chaine vide traitee comme absence de reglage : l'utilisateur qui vide
+        // le champ revient a la police par defaut, il n'impose pas du vide.
+        data: {
+          draftFontFamily: fontFamily?.length ? fontFamily : null,
+          draftFontSize: fontSize ?? null,
+        },
+      });
+
+      return { success: true };
+    },
+  );
 
 export const updateDigestDetailLevelAction = actionClient
   .metadata({ name: "updateDigestDetailLevel" })

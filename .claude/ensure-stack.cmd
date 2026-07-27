@@ -37,7 +37,10 @@ echo [%date% %time%] Docker absent, lancement de "%DOCKER_EXE%" >> "%LOG%"
 start "" "%DOCKER_EXE%"
 rem Demarrage a froid (WSL2 + moteur) : jusqu'a 6 minutes.
 for /l %%i in (1,1,72) do (
-  "%SystemRoot%\System32\timeout.exe" /t 5 /nobreak > nul
+  rem ping plutot que timeout : timeout.exe echoue des que l'entree standard
+  rem est redirigee ("la redirection de l'entree n'est pas prise en charge"),
+  rem ce qui vide la boucle d'attente de sa substance. ping est insensible.
+  ping -n 6 127.0.0.1 >nul
   docker info >nul 2>&1
   if not errorlevel 1 goto :docker_ok
 )
@@ -70,7 +73,10 @@ rem survivre a la fin de ce script, du Planificateur ou du shell appelant.
 rem La sortie du serveur part dans %LOGDIR%\serveur.log (voir dev-web.cmd).
 wscript.exe //B //Nologo "%ROOT%\.claude\run-hidden.vbs" 0 "%ROOT%\.claude\dev-web.cmd"
 for /l %%i in (1,1,72) do (
-  "%SystemRoot%\System32\timeout.exe" /t 5 /nobreak > nul
+  rem ping plutot que timeout : timeout.exe echoue des que l'entree standard
+  rem est redirigee ("la redirection de l'entree n'est pas prise en charge"),
+  rem ce qui vide la boucle d'attente de sa substance. ping est insensible.
+  ping -n 6 127.0.0.1 >nul
   curl -s -o nul -m 5 http://localhost:3000/login
   if not errorlevel 1 exit /b 0
 )

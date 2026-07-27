@@ -114,6 +114,10 @@ export interface EmailProvider {
       cc?: string;
       bcc?: string;
       attachments?: MailAttachment[];
+      /** Mise en forme du brouillon. Absent = police par defaut du fournisseur. */
+      fontFamily?: string | null;
+      fontSize?: number | null;
+      signatureHtml?: string | null;
     },
     userEmail: string,
     executedRule?: { id: string; threadId: string; emailAccountId: string },

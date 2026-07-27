@@ -5,14 +5,27 @@ import {
 } from "@/utils/email/quoted-plain-text";
 import { convertNewlinesToBr, escapeHtml } from "@/utils/string";
 
+/** Police Outlook par defaut : conservee quand rien n'est configure. */
+const DEFAULT_FONT_FAMILY = "Aptos, Calibri, Arial, Helvetica, sans-serif";
+const DEFAULT_FONT_SIZE_PT = 12;
+
 export const createOutlookReplyContent = ({
   textContent,
   htmlContent,
   message,
+  fontFamily,
+  fontSize,
+  signatureHtml,
 }: {
   textContent?: string;
   htmlContent?: string;
   message: Pick<ParsedMessage, "headers" | "textPlain" | "textHtml">;
+  /** Police du corps. Null/absent = police par defaut du fournisseur. */
+  fontFamily?: string | null;
+  /** Taille en points. Null/absent = taille par defaut du fournisseur. */
+  fontSize?: number | null;
+  /** Signature HTML ajoutee sous le texte, avant le message cite. */
+  signatureHtml?: string | null;
 }): {
   html: string;
   text: string;
@@ -39,13 +52,20 @@ export const createOutlookReplyContent = ({
   const contentHtml =
     htmlContent || (textContent ? convertNewlinesToBr(textContent) : "");
 
-  // Outlook-specific font styling with Aptos as default
-  const outlookFontStyle =
-    "font-family: Aptos, Calibri, Arial, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0);";
+  // Police configurable par compte ; a defaut, celle d'Outlook.
+  const outlookFontStyle = `font-family: ${fontFamily || DEFAULT_FONT_FAMILY}; font-size: ${fontSize || DEFAULT_FONT_SIZE_PT}pt; color: rgb(0, 0, 0);`;
+
+  // La signature herite de la meme police que le corps, sans quoi Outlook la
+  // rendrait dans sa police par defaut et le brouillon aurait deux typographies.
+  // Le saut de ligne fait partie du bloc : sans signature, la sortie reste
+  // strictement identique a ce qu'elle etait.
+  const signatureBlock = signatureHtml
+    ? `\n<div ${dirAttribute} style="${outlookFontStyle}">${signatureHtml}</div>`
+    : "";
 
   // Format HTML version with Outlook-style formatting
   const html =
-    `<div ${dirAttribute} style="${outlookFontStyle}">${contentHtml}</div>
+    `<div ${dirAttribute} style="${outlookFontStyle}">${contentHtml}</div>${signatureBlock}
 <br>
 <div style="border-top: 1px solid #e1e1e1; padding-top: 10px; margin-top: 10px;">
   <div ${dirAttribute} style="font-size: 11pt; color: rgb(0, 0, 0);">${escapeHtml(quotedHeader)}<br></div>

@@ -268,6 +268,18 @@ const draft: ActionFunction<{
     includeAiSelectedAttachments: true,
   });
 
+  // Mise en forme du brouillon : police et signature propres au compte. Sans
+  // cela le brouillon sort dans la police par defaut d'Outlook et sans
+  // signature, ce qui oblige a le retoucher avant chaque envoi.
+  const miseEnForme = await prisma.emailAccount.findUnique({
+    where: { id: emailAccount.id },
+    select: {
+      signature: true,
+      draftFontFamily: true,
+      draftFontSize: true,
+    },
+  });
+
   const draftArgs = {
     to: args.to ?? undefined,
     subject: args.subject ?? undefined,
@@ -275,6 +287,9 @@ const draft: ActionFunction<{
     cc: args.cc ?? undefined,
     bcc: args.bcc ?? undefined,
     attachments,
+    fontFamily: miseEnForme?.draftFontFamily,
+    fontSize: miseEnForme?.draftFontSize,
+    signatureHtml: miseEnForme?.signature,
   };
 
   const result = await client.draftEmail(
