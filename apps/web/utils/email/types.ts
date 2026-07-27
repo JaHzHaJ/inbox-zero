@@ -117,7 +117,6 @@ export interface EmailProvider {
       /** Mise en forme du brouillon. Absent = police par defaut du fournisseur. */
       fontFamily?: string | null;
       fontSize?: number | null;
-      signatureHtml?: string | null;
     },
     userEmail: string,
     executedRule?: { id: string; threadId: string; emailAccountId: string },

@@ -276,7 +276,6 @@ export async function draftEmail(
     attachments?: Attachment[];
     fontFamily?: string | null;
     fontSize?: number | null;
-    signatureHtml?: string | null;
   },
   userEmails: string | string[],
   logger: Logger,
@@ -286,7 +285,6 @@ export async function draftEmail(
     message: originalEmail,
     fontFamily: args.fontFamily,
     fontSize: args.fontSize,
-    signatureHtml: args.signatureHtml,
   });
 
   const recipients = buildReplyAllRecipients(

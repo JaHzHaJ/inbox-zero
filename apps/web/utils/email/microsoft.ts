@@ -653,7 +653,6 @@ export class OutlookProvider implements EmailProvider {
       attachments?: MailAttachment[];
       fontFamily?: string | null;
       fontSize?: number | null;
-      signatureHtml?: string | null;
     },
     userEmail: string,
     executedRule?: { id: string; threadId: string; emailAccountId: string },

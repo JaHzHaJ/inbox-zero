@@ -36,45 +36,28 @@ describe("mise en forme des brouillons", () => {
     expect(html).not.toContain("Aptos");
   });
 
-  it("ajoute la signature sous le corps, avant le message cite", () => {
+  it("n'ajoute PAS de signature : generate-draft l'a deja mise dans le contenu", () => {
+    // Garde-fou de non-regression. Ajouter la signature ici la faisait
+    // apparaitre EN DOUBLE dans le brouillon (constate le 27/07) : le contenu
+    // recu contient deja la signature, ajoutee juste apres la redaction.
     const { html } = createOutlookReplyContent({
-      textContent: "Bonjour,",
-      message,
-      signatureHtml: "<p>Bien cordialement,<br>Cecile</p>",
-    });
-
-    const posCorps = html.indexOf("Bonjour,");
-    const posSignature = html.indexOf("Bien cordialement");
-    const posCitation = html.indexOf("wrote:");
-
-    expect(posSignature).toBeGreaterThan(posCorps);
-    expect(posCitation).toBeGreaterThan(posSignature);
-  });
-
-  it("laisse la sortie inchangee quand il n'y a pas de signature", () => {
-    // Garde-fou de non-regression : le bloc signature ne doit pas introduire de
-    // ligne vide, sous peine de casser tous les tests de rendu existants.
-    const { html } = createOutlookReplyContent({
-      textContent: "Bonjour,",
-      message,
-    });
-
-    expect(html).not.toContain("</div>\n\n<br>");
-    expect(html).toContain("</div>\n<br>");
-  });
-
-  it("habille la signature de la meme police que le corps", () => {
-    const { html } = createOutlookReplyContent({
-      textContent: "Bonjour,",
+      textContent: "Bonjour,\n\nBien cordialement,\nCecile",
       message,
       fontFamily: "Garamond, serif",
       fontSize: 11,
-      signatureHtml: "<p>Cecile</p>",
     });
 
-    // Deux blocs a la meme police : le corps et la signature. Sans cela Outlook
-    // rendrait la signature dans sa police par defaut.
-    const occurrences = html.split("font-family: Garamond, serif").length - 1;
-    expect(occurrences).toBe(2);
+    const occurrences = html.split("Bien cordialement").length - 1;
+    expect(occurrences).toBe(1);
+  });
+
+  it("laisse la structure du corps intacte", () => {
+    const { html } = createOutlookReplyContent({
+      textContent: "Bonjour,",
+      message,
+    });
+
+    expect(html).toContain("</div>\n<br>");
+    expect(html).not.toContain("</div>\n\n<br>");
   });
 });

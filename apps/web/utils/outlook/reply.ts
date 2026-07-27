@@ -15,7 +15,6 @@ export const createOutlookReplyContent = ({
   message,
   fontFamily,
   fontSize,
-  signatureHtml,
 }: {
   textContent?: string;
   htmlContent?: string;
@@ -24,8 +23,6 @@ export const createOutlookReplyContent = ({
   fontFamily?: string | null;
   /** Taille en points. Null/absent = taille par defaut du fournisseur. */
   fontSize?: number | null;
-  /** Signature HTML ajoutee sous le texte, avant le message cite. */
-  signatureHtml?: string | null;
 }): {
   html: string;
   text: string;
@@ -55,17 +52,13 @@ export const createOutlookReplyContent = ({
   // Police configurable par compte ; a defaut, celle d'Outlook.
   const outlookFontStyle = `font-family: ${fontFamily || DEFAULT_FONT_FAMILY}; font-size: ${fontSize || DEFAULT_FONT_SIZE_PT}pt; color: rgb(0, 0, 0);`;
 
-  // La signature herite de la meme police que le corps, sans quoi Outlook la
-  // rendrait dans sa police par defaut et le brouillon aurait deux typographies.
-  // Le saut de ligne fait partie du bloc : sans signature, la sortie reste
-  // strictement identique a ce qu'elle etait.
-  const signatureBlock = signatureHtml
-    ? `\n<div ${dirAttribute} style="${outlookFontStyle}">${signatureHtml}</div>`
-    : "";
+  // La signature n'est PAS ajoutee ici : generate-draft.ts l'ajoute deja au
+  // contenu juste apres la redaction. L'ajouter une seconde fois la ferait
+  // apparaitre en double dans le brouillon.
 
   // Format HTML version with Outlook-style formatting
   const html =
-    `<div ${dirAttribute} style="${outlookFontStyle}">${contentHtml}</div>${signatureBlock}
+    `<div ${dirAttribute} style="${outlookFontStyle}">${contentHtml}</div>
 <br>
 <div style="border-top: 1px solid #e1e1e1; padding-top: 10px; margin-top: 10px;">
   <div ${dirAttribute} style="font-size: 11pt; color: rgb(0, 0, 0);">${escapeHtml(quotedHeader)}<br></div>

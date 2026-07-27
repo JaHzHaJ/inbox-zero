@@ -289,7 +289,6 @@ const draft: ActionFunction<{
     attachments,
     fontFamily: miseEnForme?.draftFontFamily,
     fontSize: miseEnForme?.draftFontSize,
-    signatureHtml: miseEnForme?.signature,
   };
 
   const result = await client.draftEmail(
