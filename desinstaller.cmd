@@ -34,7 +34,12 @@ if not defined ARGS if not "%CHOIX%"=="1" (
   goto :fin
 )
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%PS1%" %ARGS%
+rem Si la desinstallation supprime le depot, deux pieges : Windows verrouille
+rem le repertoire courant (on sort donc vers TEMP), et ce fichier .cmd peut
+rem lui-meme disparaitre en cours de route. cmd lit un batch ligne a ligne :
+rem la fin tient donc sur UNE seule ligne, entierement lue avant d'etre lancee.
+cd /d "%TEMP%"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PS1%" %ARGS% & echo. & pause & exit /b
 
 :fin
 echo.

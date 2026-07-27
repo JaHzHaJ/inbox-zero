@@ -123,7 +123,7 @@ le `.env` dans OneDrive, et la base de données hébergée le cas échéant.
 
 ```powershell
 Start-ScheduledTask -TaskName 'InboxZero Recap 7h'
-Get-Content "$env:USERPROFILE\dev\inbox-zero\.claude\digest-cron.log" -Wait -Tail 40
+Get-Content "$env:LOCALAPPDATA\GestionMails\logs\digest-cron.log" -Wait -Tail 40
 ```
 
 Séquence attendue : serveur démarré → `rattrapage passe 1 : {"done":true,…}` →
@@ -154,5 +154,5 @@ Cela ne réveille que depuis la **veille** : un poste éteint ne peut pas être 
 | Récap vide | Aucun mail nouveau depuis le dernier envoi | Vérifier `digest-cron.log` : `newThreadCount` |
 | `Docker Desktop introuvable` | Installation par utilisateur non détectée | Le chemin est résolu dynamiquement ; sinon vérifier l'installation de Docker |
 
-Les journaux utiles sont dans `.claude\` : `digest-cron.log`, `ensure-stack.log`,
-`catch-up-last.json`, `digest-send-last.json`.
+Les journaux utiles sont dans `%LOCALAPPDATA%\GestionMails\logs\` : `digest-cron.log`,
+`ensure-stack.log`, `serveur.log`, `catch-up-dernier.json`, `envoi-dernier.json`.

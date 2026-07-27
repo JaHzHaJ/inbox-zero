@@ -37,7 +37,7 @@ function Ok($t) { $script:Faits += $t; Write-Host "    [fait] $t" -ForegroundCol
 function Info($t) { Write-Host "    $t" -ForegroundColor DarkGray }
 function Rate($t, $d) { Write-Host "    [echec] $t" -ForegroundColor Red; if ($d) { Write-Host "    $d" -ForegroundColor Red } }
 
-$logDir = Join-Path $env:LOCALAPPDATA 'GestionMails\logs'
+$logDir = Join-Path $env:LOCALAPPDATA 'GestionMails'
 $raccourci = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Gestion Mails.lnk'
 
 # --- Ce qui va etre fait, avant de le faire -----------------------------------
@@ -73,28 +73,39 @@ try {
   $tache = Get-ScheduledTask -TaskName $NomTache -ErrorAction Stop
   if ($Desinstaller) {
     Unregister-ScheduledTask -TaskName $NomTache -Confirm:$false
-    Ok "Tache " $NomTache " supprimee"
+    Ok "Tache '$NomTache' supprimee"
   } else {
     Disable-ScheduledTask -TaskName $NomTache | Out-Null
-    Ok "Tache " $NomTache " desactivee (Enable-ScheduledTask pour la reactiver)"
+    Ok "Tache '$NomTache' desactivee (Enable-ScheduledTask pour la reactiver)"
   }
 } catch {
-  Info "Aucune tache " $NomTache " sur ce poste."
+  Info "Aucune tache '$NomTache' sur ce poste."
 }
 
 # --- 2. Serveur ---------------------------------------------------------------
 Etape 'Serveur local'
 $connexion = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
+$proprietaire = $null
 if ($connexion) {
+  $proprietaire = Get-CimInstance Win32_Process -Filter "ProcessId=$($connexion[0].OwningProcess)" -ErrorAction SilentlyContinue
+}
+if (-not $proprietaire) {
+  Info 'Aucun serveur en cours.'
+} elseif ($proprietaire.Name -ne 'node.exe') {
+  Info "Le port 3000 est occupe par $($proprietaire.Name), pas par l'application : rien n'est arrete."
+} else {
   # On remonte jusqu'au cmd racine : tuer le seul processus qui ecoute ne suffit
-  # pas, le superviseur de Next relance aussitot son worker.
-  $courant = $connexion[0].OwningProcess
-  $racine = $courant
+  # pas, le superviseur de Next relance aussitot son worker. On ne grimpe qu'a
+  # travers des node.exe : au-dela (terminal, Explorateur), on tuerait des
+  # programmes sans rapport avec l'application.
+  $racine = $proprietaire.ProcessId
+  $courant = $proprietaire.ParentProcessId
   for ($i = 0; $i -lt 6; $i++) {
     $p = Get-CimInstance Win32_Process -Filter "ProcessId=$courant" -ErrorAction SilentlyContinue
     if (-not $p) { break }
+    if ($p.Name -eq 'cmd.exe') { $racine = $p.ProcessId; break }
+    if ($p.Name -ne 'node.exe') { break }
     $racine = $p.ProcessId
-    if ($p.Name -eq 'cmd.exe') { break }
     $courant = $p.ParentProcessId
   }
   function Stop-Arbre($id) {
@@ -105,8 +116,6 @@ if ($connexion) {
   Stop-Arbre $racine
   Start-Sleep -Seconds 2
   Ok 'Serveur arrete'
-} else {
-  Info 'Aucun serveur en cours.'
 }
 
 if (-not $Desinstaller) {
@@ -144,6 +153,9 @@ if (Test-Path $logDir) {
 # --- 6. Depot -----------------------------------------------------------------
 Etape 'Depot'
 if (Test-Path $RepoPath) {
+  # Sortir du dossier avant de le supprimer : Windows verrouille le repertoire
+  # courant de chaque programme, la racine du depot resisterait.
+  Set-Location $env:TEMP
   # node_modules contient des dizaines de milliers de fichiers : Remove-Item
   # peut echouer sur les chemins longs, on retente via robocopy si besoin.
   try {

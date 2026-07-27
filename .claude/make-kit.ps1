@@ -18,11 +18,15 @@
 [CmdletBinding()]
 param(
   [string] $Destination,
-  [string] $RepoPath = (Split-Path $PSScriptRoot -Parent),
+  [string] $RepoPath,
   [switch] $SansSecrets
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Sous Windows PowerShell 5.1, $PSScriptRoot est vide pendant l'evaluation des
+# valeurs par defaut des parametres : on ne peut le lire qu'ici, dans le corps.
+if (-not $RepoPath) { $RepoPath = Split-Path $PSScriptRoot -Parent }
 
 if (-not $Destination) {
   $base = if ($env:OneDriveCommercial) { $env:OneDriveCommercial } else { $env:OneDrive }
