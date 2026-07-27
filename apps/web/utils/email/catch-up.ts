@@ -41,6 +41,8 @@ export type CatchUpAccountResult = {
   newThreadCount: number;
   processedCount: number;
   digestItemsCreated: number;
+  /** Items refuses temporairement (quota 24 h) : ils restent a faire. */
+  digestItemsDeferred: number;
   remaining: number;
 };
 
@@ -157,16 +159,23 @@ export async function catchUpEmailAccount({
   // « remaining » pour que le script rappelle la route.
   const notProcessed = batch.length - processedCount;
 
+  const digestItemsDeferred = drainedFirst.deferred + drainedAfter.deferred;
+
   return {
     emailAccountId,
     email,
     candidateCount: candidates.length,
     newThreadCount: newestPerThread.length,
     processedCount,
-    digestItemsCreated: drainedFirst + drainedAfter,
+    digestItemsCreated: drainedFirst.created + drainedAfter.created,
+    digestItemsDeferred,
+    // Un item reporte reste a faire : le cron doit rappeler la route.
     remaining: Math.max(
       0,
-      newestPerThread.length - batch.length + notProcessed,
+      newestPerThread.length -
+        batch.length +
+        notProcessed +
+        digestItemsDeferred,
     ),
   };
 }
@@ -256,12 +265,13 @@ async function drainDigestItems({
     },
   });
 
-  if (!pending.length) return 0;
+  if (!pending.length) return { created: 0, deferred: 0 };
 
   const messagesById = new Map(
     candidates.map((message) => [message.id, message]),
   );
   let created = 0;
+  let deferred = 0;
 
   await runWithBoundedConcurrency({
     items: pending,
@@ -289,15 +299,20 @@ async function drainDigestItems({
       );
 
       if (status === "created") created++;
+      if (status === "deferred") deferred++;
     },
   });
 
-  logger.info("Items de recap produits en synchrone", {
+  // « deferred » doit rester visible : en silence, un quota atteint ressemble a
+  // un rattrapage qui n'a rien trouve (piege du 27/07).
+  const journaliser = deferred > 0 ? logger.warn : logger.info;
+  journaliser.call(logger, "Items de recap produits en synchrone", {
     pending: pending.length,
     created,
+    deferred,
   });
 
-  return created;
+  return { created, deferred };
 }
 
 async function listMessagesSince({

@@ -17,7 +17,17 @@ import {
 } from "@/utils/redis/owned-lock";
 import { getEmailAccountWithAi } from "@/utils/user/get";
 
-export type ProcessDigestItemStatus = "created" | "skipped" | "already-handled";
+/**
+ * `deferred` designe un refus TEMPORAIRE (quota 24 h atteint) : l'item doit
+ * rester a faire. `skipped` designe un refus DEFINITIF (pas d'acces, mail
+ * venant de nous, regle sans nom, resume juge inutile) : inutile d'y revenir.
+ * Confondre les deux fait disparaitre des mails pendant 7 jours.
+ */
+export type ProcessDigestItemStatus =
+  | "created"
+  | "skipped"
+  | "deferred"
+  | "already-handled";
 
 const DIGEST_ITEM_PROCESSING_TTL_SECONDS = 15 * 60;
 const DIGEST_ITEM_PROCESSED_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -56,15 +66,22 @@ export async function processDigestItem(
   try {
     const status = await runDigestItem(body, logger);
 
-    // Marque comme traite meme quand l'item a ete volontairement saute (resume
-    // juge inutile, quota atteint) : sinon le job after() refait l'appel IA.
     if (key && lockToken) {
-      await markOwnedLockProcessed({
-        key,
-        lockToken,
-        processedStatus: DIGEST_ITEM_PROCESSED_STATUS,
-        processedTtlSeconds: DIGEST_ITEM_PROCESSED_TTL_SECONDS,
-      });
+      if (status === "deferred") {
+        // Refus temporaire : on LIBERE le verrou, sinon l'item serait perdu
+        // pendant toute la duree de vie du marqueur (constate le 27/07 : neuf
+        // mails invisibles au recap alors que le quota s'etait libere).
+        await clearOwnedLock({ key, lockToken });
+      } else {
+        // Refus definitif ou item cree : on marque, pour que le job after()
+        // qui arrivera ensuite ne refasse pas l'appel au modele.
+        await markOwnedLockProcessed({
+          key,
+          lockToken,
+          processedStatus: DIGEST_ITEM_PROCESSED_STATUS,
+          processedTtlSeconds: DIGEST_ITEM_PROCESSED_TTL_SECONDS,
+        });
+      }
     }
 
     return { status };
@@ -139,10 +156,11 @@ async function runDigestItem(
     maxSummariesPer24h: env.DIGEST_MAX_SUMMARIES_PER_24H,
   });
   if (!summaryReservation.reserved) {
-    logger.info("Skipping digest item because summary limit was reached", {
+    // Temporaire : le compteur glissant se libere au fil des 24 h.
+    logger.warn("Item de recap reporte : quota de resumes 24 h atteint", {
       maxSummariesPer24h: env.DIGEST_MAX_SUMMARIES_PER_24H,
     });
-    return "skipped";
+    return "deferred";
   }
 
   let shouldReleaseSummaryReservation = !!summaryReservation.reservationId;

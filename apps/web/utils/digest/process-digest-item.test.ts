@@ -141,7 +141,7 @@ describe("processDigestItem", () => {
     expect(markOwnedLockProcessed).toHaveBeenCalled();
   });
 
-  it("marque le verrou comme traite quand le quota de resumes est atteint", async () => {
+  it("reporte l'item et LIBERE le verrou quand le quota est atteint", async () => {
     setupHappyPath();
     vi.mocked(reserveDigestSummarySlot).mockResolvedValue({
       reserved: false,
@@ -149,9 +149,16 @@ describe("processDigestItem", () => {
 
     const result = await processDigestItem(body, logger);
 
-    expect(result).toEqual({ status: "skipped" });
+    // Refus TEMPORAIRE : le compteur glissant se libere au fil des 24 h, donc
+    // l'item doit rester a faire. Le marquer « traite » l'aurait fait
+    // disparaitre du recap pendant 7 jours (incident du 27/07).
+    expect(result).toEqual({ status: "deferred" });
     expect(aiSummarizeEmailForDigest).not.toHaveBeenCalled();
-    expect(markOwnedLockProcessed).toHaveBeenCalled();
+    expect(clearOwnedLock).toHaveBeenCalledWith({
+      key: lockKey,
+      lockToken: "lock-token-1",
+    });
+    expect(markOwnedLockProcessed).not.toHaveBeenCalled();
   });
 
   it("libere le verrou et propage l'erreur en cas d'echec", async () => {

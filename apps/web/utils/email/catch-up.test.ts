@@ -205,6 +205,28 @@ describe("catchUpEmailAccount", () => {
     );
     expect(result.digestItemsCreated).toBe(1);
   });
+
+  it("signale les items reportes et les garde a faire", async () => {
+    mockProviderMessages([
+      makeMessage("msg-1", "thread-1", "2026-07-24T08:00:00Z"),
+    ]);
+    vi.mocked(prisma.executedRule.findMany).mockResolvedValue([
+      { messageId: "msg-1" },
+    ] as never);
+    vi.mocked(prisma.executedAction.findMany)
+      .mockResolvedValueOnce([
+        { id: "action-1", executedRule: { messageId: "msg-1" } },
+      ] as never)
+      .mockResolvedValue([] as never);
+    vi.mocked(processDigestItem).mockResolvedValue({ status: "deferred" });
+
+    const result = await catchUpEmailAccount(baseArgs());
+
+    expect(result.digestItemsCreated).toBe(0);
+    expect(result.digestItemsDeferred).toBe(1);
+    // remaining > 0 fait rappeler la route par le script cron.
+    expect(result.remaining).toBe(1);
+  });
 });
 
 describe("getEmailAccountsToCatchUp", () => {
