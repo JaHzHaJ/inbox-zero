@@ -26,4 +26,20 @@ export const providerOptions: { label: string; value: string }[] = [
   { label: "Groq", value: Provider.GROQ },
   { label: "OpenRouter", value: Provider.OPENROUTER },
   { label: "Vercel AI Gateway", value: Provider.AI_GATEWAY },
+  { label: "Claude Code (CLI, sans clé API)", value: Provider.CLAUDE_CODE },
 ];
+
+/**
+ * Fournisseurs qui ne prennent pas de cle API : ils s'appuient sur un outil
+ * local deja authentifie (CLI) ou sur un serveur local. Leur imposer une cle
+ * empecherait purement et simplement de les selectionner.
+ */
+const PROVIDERS_WITHOUT_API_KEY: string[] = [
+  Provider.CLAUDE_CODE,
+  Provider.CODEX_CLI,
+  Provider.OLLAMA,
+];
+
+export function providerNeedsApiKey(provider: string | null | undefined) {
+  return !!provider && !PROVIDERS_WITHOUT_API_KEY.includes(provider);
+}

@@ -21,6 +21,7 @@ import { AlertBasic, AlertError } from "@/components/Alert";
 import {
   DEFAULT_PROVIDER,
   Provider,
+  providerNeedsApiKey,
   providerOptions,
 } from "@/utils/llms/config";
 import { useUser } from "@/hooks/useUser";
@@ -145,23 +146,27 @@ function ModelSectionForm(props: {
             />
           )}
 
-          <Input
-            type="password"
-            name="aiApiKey"
-            label="API Key"
-            registerProps={register("aiApiKey")}
-            error={errors.aiApiKey}
-            placeholder={
-              hasStoredAiApiKey
-                ? "Leave blank to keep the current key"
-                : undefined
-            }
-            explainText={
-              hasStoredAiApiKey
-                ? "Leave this blank to keep the current API key, or enter a new key to replace it."
-                : undefined
-            }
-          />
+          {/* Les fournisseurs en ligne de commande s'authentifient tout seuls :
+              afficher un champ de cle ne ferait qu'egarer. */}
+          {providerNeedsApiKey(aiProvider) && (
+            <Input
+              type="password"
+              name="aiApiKey"
+              label="API Key"
+              registerProps={register("aiApiKey")}
+              error={errors.aiApiKey}
+              placeholder={
+                hasStoredAiApiKey
+                  ? "Leave blank to keep the current key"
+                  : undefined
+              }
+              explainText={
+                hasStoredAiApiKey
+                  ? "Leave this blank to keep the current API key, or enter a new key to replace it."
+                  : undefined
+              }
+            />
+          )}
         </>
       )}
 

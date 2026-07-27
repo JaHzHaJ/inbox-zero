@@ -11,7 +11,11 @@ import {
   updateDigestDetailLevelBody,
   updateDraftFormattingBody,
 } from "@/utils/actions/settings.validation";
-import { DEFAULT_PROVIDER, Provider } from "@/utils/llms/config";
+import {
+  DEFAULT_PROVIDER,
+  Provider,
+  providerNeedsApiKey,
+} from "@/utils/llms/config";
 import prisma from "@/utils/prisma";
 import {
   calculateNextScheduleDate,
@@ -67,7 +71,14 @@ export const updateAiSettingsAction = actionClientUser
 
       let nextAiApiKey: string | null = providedAiApiKey;
 
-      if (!nextAiApiKey && aiProvider !== DEFAULT_PROVIDER) {
+      // Les fournisseurs en ligne de commande (Claude Code, Codex) et Ollama
+      // s'appuient sur un outil local deja authentifie : exiger une cle les
+      // rendrait tout simplement impossibles a selectionner.
+      if (
+        !nextAiApiKey &&
+        aiProvider !== DEFAULT_PROVIDER &&
+        providerNeedsApiKey(aiProvider)
+      ) {
         const existingUser = await prisma.user.findUnique({
           where: { id: userId },
           select: { aiProvider: true, aiApiKey: true },
