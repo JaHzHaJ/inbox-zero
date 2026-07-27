@@ -110,10 +110,14 @@ qa/browser-flows/results/*
 .claude/scheduled_tasks.lock
 .claude/worktrees/
 
-# journaux et sorties d'execution des scripts « Gestion Mails » (poste local)
+# journaux et sorties d'execution des scripts « Gestion Mails » (poste local).
+# Ce depot est PUBLIC : rien de ce qui touche a la boite mail reelle (identifiants
+# de messages, sauvegardes de regles, journaux de retaguage) ne doit y figurer.
 .claude/*.log
 .claude/catch-up-last.json
 .claude/digest-send-last.json
+.claude/regles-avant-*.txt
+.claude/retag-*.log
 
 # eval reports
 eval-results/
