@@ -28,6 +28,7 @@ import {
 import { isMessagingDraftActionType } from "@/utils/actions/draft-reply";
 import { checkHasAccess } from "@/utils/premium/server";
 import { handlePreviousDraftDeletion } from "@/utils/ai/choose-rule/draft-management";
+import { hasRepliedSince } from "@/utils/reply-tracker/already-replied";
 
 const MODULE = "ai-actions";
 
@@ -234,6 +235,26 @@ const draft: ActionFunction<{
       existingDraftId: previousDraftHandling.existingDraftId,
       reason: previousDraftHandling.reason,
     });
+    return { draftId: "" };
+  }
+
+  // Le classement se fait par lots : un mail recu a 8h52 peut n'etre traite
+  // qu'a 10h04, apres une reponse ecrite a 8h54. Rediger alors un brouillon
+  // pour un message deja traite ne fait qu'encombrer le dossier Brouillons.
+  const dejaRepondu = await hasRepliedSince({
+    provider: client,
+    threadId: email.threadId,
+    messageDate: new Date(email.headers.date || email.internalDate || 0),
+    logger,
+  });
+
+  if (dejaRepondu) {
+    logger.info(
+      "Pas de brouillon : une reponse a deja ete envoyee sur ce fil",
+      {
+        threadId: email.threadId,
+      },
+    );
     return { draftId: "" };
   }
 

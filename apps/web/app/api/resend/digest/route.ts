@@ -27,7 +27,7 @@ import {
   sortDigestItemsByDateDesc,
 } from "@/utils/digest/digest-item-meta";
 import { createEmailProvider } from "@/utils/email/provider";
-import type { EmailProvider } from "@/utils/email/types";
+import { getRepliedThreadDates } from "@/utils/reply-tracker/already-replied";
 import { getEmailUrlForOptionalMessage } from "@/utils/url";
 import { sleep } from "@/utils/sleep";
 import { withQstashOrInternal } from "@/utils/qstash";
@@ -89,9 +89,6 @@ export const POST = withError(
   }),
 );
 
-/** Nombre d'envois relus pour detecter les reponses : large, mais un seul appel. */
-const REPLIED_LOOKUP_MAX_SENT = 200;
-
 /** Date du plus ancien mail present au recap : borne basse de la recherche. */
 function earliestItemDate(
   digests: { items: { messageId: string }[] }[],
@@ -111,44 +108,6 @@ function earliestItemDate(
   return Number.isFinite(earliest)
     ? new Date(earliest)
     : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-}
-
-/**
- * Fil de discussion -> date du dernier message envoye par l'utilisateur.
- * Un seul appel au fournisseur, pas un par item.
- */
-async function getRepliedThreadDates({
-  emailProvider,
-  since,
-  logger,
-}: {
-  emailProvider: EmailProvider;
-  since: Date;
-  logger: Logger;
-}): Promise<Map<string, number>> {
-  const replied = new Map<string, number>();
-
-  try {
-    const sent = await emailProvider.getSentMessages(REPLIED_LOOKUP_MAX_SENT);
-
-    for (const message of sent) {
-      const time = new Date(message.date).getTime();
-      if (time < since.getTime()) continue;
-
-      const known = replied.get(message.threadId);
-      if (!known || time > known) replied.set(message.threadId, time);
-    }
-  } catch (error) {
-    // Degradation gracieuse : mieux vaut un recap trop complet que pas de recap.
-    logger.error(
-      "Lecture des envois impossible, filtre « deja repondu » ignore",
-      {
-        error,
-      },
-    );
-  }
-
-  return replied;
 }
 
 /** Solde des digests sans envoyer de mail : rien a signaler. */
@@ -377,7 +336,7 @@ async function sendEmail({
     // creation de l'item : c'est le seul moment qui capte une reponse ecrite
     // entre la constitution du recap et son depart.
     const repliedThreads = await getRepliedThreadDates({
-      emailProvider,
+      provider: emailProvider,
       since: earliestItemDate(pendingDigests, messageMap),
       logger,
     });
