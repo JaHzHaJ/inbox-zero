@@ -584,6 +584,53 @@ describe("cleanupThreadAIDrafts", () => {
     });
   });
 
+  it("ne nettoie que les brouillons anterieurs quand une borne est fournie", async () => {
+    vi.mocked(prisma.executedAction.findMany).mockResolvedValue([] as any);
+
+    const provider = {
+      getDraft: vi.fn(),
+      deleteDraft: vi.fn(),
+    };
+    const dateEnvoi = new Date("2026-07-26T18:51:00.000Z");
+
+    await cleanupThreadAIDrafts({
+      threadId: "thread-1",
+      emailAccountId: "account-1",
+      provider: provider as any,
+      logger,
+      excludeMessageId: "message-2",
+      createdBefore: dateEnvoi,
+    });
+
+    // Sans cette borne, rejouer un envoi ancien efface un brouillon redige
+    // depuis pour un message plus recent (constate le 27/07 : trois brouillons
+    // supprimes, dont un cree quatre minutes plus tot).
+    expect(prisma.executedAction.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          executedRule: expect.objectContaining({
+            createdAt: { lt: dateEnvoi },
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("nettoie sans restriction de date quand aucune borne n'est fournie", async () => {
+    vi.mocked(prisma.executedAction.findMany).mockResolvedValue([] as any);
+
+    await cleanupThreadAIDrafts({
+      threadId: "thread-1",
+      emailAccountId: "account-1",
+      provider: { getDraft: vi.fn(), deleteDraft: vi.fn() } as any,
+      logger,
+      excludeMessageId: "message-2",
+    });
+
+    const appel = vi.mocked(prisma.executedAction.findMany).mock.calls[0]?.[0];
+    expect((appel?.where?.executedRule as any)?.createdAt).toBeUndefined();
+  });
+
   it("transitions replied-without-draft records after deleting stale drafts", async () => {
     const draftDetails = createDraftMessage({
       textPlain: "Generated reply",

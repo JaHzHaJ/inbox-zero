@@ -106,6 +106,10 @@ export async function handleOutboundMessage({
       provider,
       logger,
       excludeMessageId: message.id,
+      // Borne indispensable : le rattrapage rejoue des envois vieux de
+      // plusieurs jours. Sans elle, une reponse d'hier efface le brouillon
+      // redige ce matin pour un message arrive entre-temps.
+      createdBefore: new Date(message.date),
     });
   } catch (error) {
     logger.error("Error during thread draft cleanup", { error });

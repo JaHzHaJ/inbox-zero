@@ -47,12 +47,16 @@ export async function trackSentDraftStatus({
     return;
   }
 
-  // Find the most recently created draft for this thread
+  // Find the most recently created draft for this thread, among those that
+  // existed BEFORE this message was sent : un brouillon redige apres l'envoi ne
+  // peut pas etre ce qui a ete envoye. Sans cette borne, rejouer un envoi
+  // ancien (rattrapage) marque a tort un brouillon plus recent comme utilise.
   const executedAction = await prisma.executedAction.findFirst({
     where: {
       executedRule: {
         emailAccountId,
         threadId: threadId,
+        createdAt: { lt: new Date(message.date) },
       },
       type: ActionType.DRAFT_EMAIL,
       draftId: { not: null },
@@ -265,12 +269,20 @@ export async function cleanupThreadAIDrafts({
   provider,
   logger,
   excludeMessageId,
+  createdBefore,
 }: {
   threadId: string;
   emailAccountId: string;
   provider: EmailProvider;
   logger: Logger;
   excludeMessageId: string;
+  /**
+   * Ne nettoyer que les brouillons anterieurs a cette date. A renseigner quand
+   * le declencheur est un message ENVOYE : un brouillon cree apres cet envoi
+   * repond a un message plus recent, il ne doit pas etre efface. Sans cette
+   * borne, rejouer un envoi ancien supprime des brouillons legitimes.
+   */
+  createdBefore?: Date;
 }) {
   logger.info("Starting cleanup of old AI drafts for thread");
 
@@ -284,6 +296,7 @@ export async function cleanupThreadAIDrafts({
           emailAccountId,
           threadId: threadId,
           messageId: { not: excludeMessageId },
+          ...(createdBefore ? { createdAt: { lt: createdBefore } } : {}),
         },
         type: ActionType.DRAFT_EMAIL,
         draftId: { not: null },
