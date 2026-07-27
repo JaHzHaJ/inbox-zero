@@ -1,6 +1,6 @@
-<#
+﻿<#
 .SYNOPSIS
-  Installe « Gestion Mails » (fork Inbox Zero) sur un poste Windows.
+  Installe " Gestion Mails " (fork Inbox Zero) sur un poste Windows.
 
 .DESCRIPTION
   Idempotent : peut etre relance autant de fois que necessaire, il met alors
@@ -129,8 +129,15 @@ if ($RepoPath -like "*OneDrive*") {
 Etape '3/8 Fichier .env (secrets)'
 
 if (-not $SecretsPath) {
-  $baseOneDrive = if ($env:OneDriveCommercial) { $env:OneDriveCommercial } else { $env:OneDrive }
-  $SecretsPath = Join-Path $baseOneDrive 'Gestion Mails\.env'
+  # Priorite au .env pose A COTE de ce script : c'est ce qui rend le kit ZIP
+  # autonome, decompressable n'importe ou. OneDrive n'est que le repli.
+  $voisin = Join-Path $PSScriptRoot '.env'
+  if (Test-Path $voisin) {
+    $SecretsPath = $voisin
+  } else {
+    $baseOneDrive = if ($env:OneDriveCommercial) { $env:OneDriveCommercial } else { $env:OneDrive }
+    $SecretsPath = Join-Path $baseOneDrive 'Gestion Mails\.env'
+  }
 }
 
 $cible = Join-Path $RepoPath 'apps\web\.env'
@@ -144,7 +151,7 @@ if (Test-Path $SecretsPath) {
 } else {
   Echec 'Fichier .env' @"
 Introuvable : $SecretsPath
-Verifier que OneDrive a fini de synchroniser le dossier « Gestion Mails »,
+Verifier que OneDrive a fini de synchroniser le dossier " Gestion Mails ",
 ou passer le chemin explicitement : .\install.ps1 -SecretsPath <chemin\.env>
 "@
 }
@@ -176,7 +183,7 @@ Etape '5/8 Client Prisma'
 
 Push-Location (Join-Path $RepoPath 'apps\web')
 try {
-  # Pas de « migrate » : la base est partagee entre les postes, elle fait foi.
+  # Pas de " migrate " : la base est partagee entre les postes, elle fait foi.
   & .\node_modules\.bin\prisma.CMD generate
   if ($LASTEXITCODE -ne 0) { Echec 'prisma generate' "Code de sortie $LASTEXITCODE" }
   Ok 'Client Prisma genere'
@@ -197,7 +204,7 @@ $lien.Save()
 Ok "Raccourci cree : $raccourci"
 
 # --- 7. Tache planifiee ------------------------------------------------------
-Etape '7/8 Tache planifiee « InboxZero Recap 7h »'
+Etape '7/8 Tache planifiee " InboxZero Recap 7h "'
 
 if ($SkipTask) {
   Info 'Ignoree (-SkipTask)'
@@ -298,8 +305,8 @@ Write-Host @"
 
 Installation terminee.
 
-  - Raccourci « Gestion Mails » sur le Bureau.
+  - Raccourci " Gestion Mails " sur le Bureau.
   - Recap automatique du lundi au vendredi a 7h (reessais jusqu a 18h).
-  - Premier acces : cliquer « Sign in with Microsoft » une fois.
+  - Premier acces : cliquer " Sign in with Microsoft " une fois.
 
 "@ -ForegroundColor White

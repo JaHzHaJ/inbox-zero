@@ -89,6 +89,36 @@ Ils sont déjà configurés ; à ne refaire qu'en cas de remise à zéro.
 **Aucune URI de redirection Azure AD à ajouter** pour un nouveau poste : tous utilisent
 le même `http://localhost:3000/api/auth/callback/microsoft`.
 
+## Fabriquer le kit pour un autre poste
+
+Depuis le poste déjà installé :
+
+```powershell
+.\.claude\make-kit.ps1
+```
+
+Produit `Gestion-Mails-Installation.zip` (~15 Ko) dans le dossier OneDrive
+« Gestion Mails », contenant les deux scripts, la documentation, un LISEZ-MOI et
+le `.env`. Le ZIP se décompresse **n'importe où** : `install.ps1` cherche le
+`.env` à côté de lui en priorité.
+
+Pour un kit à transmettre sans secrets : `.\.claude\make-kit.ps1 -SansSecrets`.
+
+## Désactiver ou désinstaller
+
+Double-cliquer **`desinstaller.cmd`** — un menu propose trois niveaux :
+
+| Choix | Effet |
+|---|---|
+| **1. Désactiver** *(défaut)* | tâche planifiée désactivée, serveur arrêté. **Rien n'est supprimé**, on réactive par `Enable-ScheduledTask -TaskName 'InboxZero Recap 7h'` |
+| **2. Désinstaller l'application** | + tâche supprimée, raccourci Bureau, conteneurs et volumes Docker, journaux, dépôt |
+| **3. Désinstaller + logiciels** | + Docker Desktop, fnm/Node, pnpm — **jamais par défaut**, ils servent probablement à d'autres travaux |
+
+Le script **énumère ce qu'il va faire et demande confirmation** avant d'agir.
+
+Ne sont **jamais** touchés : les mails, les brouillons, les catégories Outlook,
+le `.env` dans OneDrive, et la base de données hébergée le cas échéant.
+
 ## Vérifier que ça marche
 
 ```powershell
