@@ -7,9 +7,18 @@ setlocal
 rem Racine deduite du script : aucun chemin en dur, le depot peut vivre
 rem n'importe ou et sur n'importe quel poste.
 for %%I in ("%~dp0..") do set "ROOT=%%~fI"
-set "LOG=%ROOT%\.claude\digest-cron.log"
-set "CATCHUP_JSON=%ROOT%\.claude\catch-up-last.json"
-set "SEND_JSON=%ROOT%\.claude\digest-send-last.json"
+
+rem Journaux dans le profil utilisateur : hors OneDrive (pas de synchronisation
+rem inutile) et hors depot (qui est public).
+set "LOGDIR=%LOCALAPPDATA%\GestionMails\logs"
+if not exist "%LOGDIR%" mkdir "%LOGDIR%" >nul 2>&1
+
+set "LOG=%LOGDIR%\digest-cron.log"
+set "CATCHUP_JSON=%LOGDIR%\catch-up-dernier.json"
+set "SEND_JSON=%LOGDIR%\envoi-dernier.json"
+
+rem Rotation par taille : au-dela de 5 Mo on archive (2 fichiers au maximum).
+for %%F in ("%LOG%") do if %%~zF GTR 5242880 move /y "%LOG%" "%LOG%.1" >nul 2>&1
 
 echo. >> "%LOG%"
 echo [%date% %time%] === declenchement du recap === >> "%LOG%"

@@ -5,8 +5,14 @@ rem Argument 1 optionnel : fichier journal.
 setlocal
 rem Racine deduite du script : aucun chemin en dur, portable d'un poste a l'autre.
 for %%I in ("%~dp0..") do set "ROOT=%%~fI"
+
+rem Journaux dans le profil utilisateur (hors OneDrive, hors depot public).
+set "LOGDIR=%LOCALAPPDATA%\GestionMails\logs"
+if not exist "%LOGDIR%" mkdir "%LOGDIR%" >nul 2>&1
+
 set "LOG=%~1"
-if not defined LOG set "LOG=%ROOT%\.claude\ensure-stack.log"
+if not defined LOG set "LOG=%LOGDIR%\ensure-stack.log"
+for %%F in ("%LOG%") do if %%~zF GTR 5242880 move /y "%LOG%" "%LOG%.1" >nul 2>&1
 
 rem --- 1. Moteur Docker ---
 docker info >nul 2>&1
@@ -59,9 +65,10 @@ rem plusieurs secondes a repondre. Trop court, on en demarre un second pour rien
 curl -s -o nul -m 20 http://localhost:3000/login
 if not errorlevel 1 exit /b 0
 echo [%date% %time%] serveur absent, demarrage... >> "%LOG%"
-rem Start-Process detache le serveur du processus appelant : il survit a la
-rem fin du script, du Planificateur ou du shell qui l'a lance.
-powershell -NoProfile -Command "Start-Process -WindowStyle Minimized -FilePath 'cmd.exe' -ArgumentList '/c','%ROOT%\.claude\dev-web.cmd'"
+rem Lance sans fenetre et sans attendre : le serveur tourne en continu et doit
+rem survivre a la fin de ce script, du Planificateur ou du shell appelant.
+rem La sortie du serveur part dans %LOGDIR%\serveur.log (voir dev-web.cmd).
+wscript.exe //B //Nologo "%ROOT%\.claude\run-hidden.vbs" 0 "%ROOT%\.claude\dev-web.cmd"
 for /l %%i in (1,1,72) do (
   "%SystemRoot%\System32\timeout.exe" /t 5 /nobreak > nul
   curl -s -o nul -m 5 http://localhost:3000/login
