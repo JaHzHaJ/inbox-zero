@@ -21,8 +21,14 @@ export const CATCH_UP_LOOKBACK_DAYS = 3;
 // Ce qu'on LISTE aupres de Graph : metadonnees seulement, quasi gratuit.
 const CATCH_UP_MAX_CANDIDATES = 300;
 // Ce qu'on FAIT PASSER dans les regles par passe : couteux (appels au modele).
-const CATCH_UP_MAX_THREADS_PER_PASS = 40;
+// Mesure sur le poste : un fil coute ~1 a 2 min au provider claude-code, donc
+// une douzaine de fils sature deja le budget de 240 s d'une passe.
+const CATCH_UP_MAX_THREADS_PER_PASS = 12;
 const CATCH_UP_RULES_CONCURRENCY = 3;
+// Part du budget reservee a la phase « regles » : le reste est garanti au drain,
+// qui est ce qui produit reellement le recap. Sans cette reserve, les regles
+// consomment toute l'echeance et le drain ne fait rien (constate le 27/07).
+const CATCH_UP_RULES_BUDGET_RATIO = 0.55;
 // Bornee volontairement : after() de Next lance ses jobs sans limite de
 // concurrence et le provider claude-code ouvre un sous-processus par appel.
 const CATCH_UP_DIGEST_CONCURRENCY = 2;
@@ -86,7 +92,6 @@ export async function catchUpEmailAccount({
   });
 
   const batch = newestPerThread.slice(0, CATCH_UP_MAX_THREADS_PER_PASS);
-  const runStartedAt = new Date();
 
   logger.info("Rattrapage des mails non traites", {
     after,
@@ -96,11 +101,25 @@ export async function catchUpEmailAccount({
     batchSize: batch.length,
   });
 
+  // On solde d'abord les actions restees sans item lors des passes precedentes
+  // (quota atteint, serveur arrete, echeance depassee) : c'est du travail deja
+  // paye cote regles, et c'est lui qui alimente le recap du jour.
+  const drainedFirst = await drainDigestItems({
+    emailAccountId,
+    since: after,
+    candidates,
+    deadlineAt,
+    logger: logger.with({ phase: "solde" }),
+  });
+
+  const rulesDeadlineAt =
+    Date.now() + (deadlineAt - Date.now()) * CATCH_UP_RULES_BUDGET_RATIO;
+
   const results = await runWithBoundedConcurrency({
     items: batch,
     concurrency: CATCH_UP_RULES_CONCURRENCY,
     run: async (message) => {
-      if (Date.now() > deadlineAt) return false;
+      if (Date.now() > rulesDeadlineAt) return false;
 
       await processHistoryForUser({
         emailAddress: email,
@@ -125,13 +144,18 @@ export async function catchUpEmailAccount({
     });
   }
 
-  const digestItemsCreated = await drainDigestItems({
+  // Second passage, pour les actions que la phase « regles » vient de creer.
+  const drainedAfter = await drainDigestItems({
     emailAccountId,
-    runStartedAt,
+    since: after,
     candidates,
     deadlineAt,
-    logger,
+    logger: logger.with({ phase: "nouveaux" }),
   });
+
+  // Un fil non traite faute de temps reste a faire : il doit compter dans
+  // « remaining » pour que le script rappelle la route.
+  const notProcessed = batch.length - processedCount;
 
   return {
     emailAccountId,
@@ -139,8 +163,11 @@ export async function catchUpEmailAccount({
     candidateCount: candidates.length,
     newThreadCount: newestPerThread.length,
     processedCount,
-    digestItemsCreated,
-    remaining: Math.max(0, newestPerThread.length - batch.length),
+    digestItemsCreated: drainedFirst + drainedAfter,
+    remaining: Math.max(
+      0,
+      newestPerThread.length - batch.length + notProcessed,
+    ),
   };
 }
 
@@ -195,16 +222,21 @@ async function getUnprocessedThreads({
  * Produit les items de recap AVANT que la route ne reponde. Les callbacks
  * after() ne demarrent qu'a la fermeture de la reponse : ils retomberont donc
  * sur un verrou deja marque comme traite et repartiront sans appel au modele.
+ *
+ * La fenetre est celle du rattrapage, PAS celle de la passe en cours : toute
+ * action DIGEST sans item est du travail a faire, meme si elle a ete creee par
+ * une passe anterieure qui a echoue (quota atteint, serveur arrete). Le verrou
+ * evite le travail redondant.
  */
 async function drainDigestItems({
   emailAccountId,
-  runStartedAt,
+  since,
   candidates,
   deadlineAt,
   logger,
 }: {
   emailAccountId: string;
-  runStartedAt: Date;
+  since: Date;
   candidates: ParsedMessage[];
   deadlineAt: number;
   logger: Logger;
@@ -215,7 +247,7 @@ async function drainDigestItems({
       digestItems: { none: {} },
       executedRule: {
         emailAccountId,
-        createdAt: { gte: runStartedAt },
+        createdAt: { gte: since },
       },
     },
     select: {

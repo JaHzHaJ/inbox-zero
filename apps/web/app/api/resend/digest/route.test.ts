@@ -121,8 +121,24 @@ describe("reservation du creneau de recap", () => {
       message: "Digest slot already claimed",
     });
     expect(sendDigest).not.toHaveBeenCalled();
-    // On s'arrete avant meme de lire les digests en attente.
-    expect(prisma.digest.findMany).not.toHaveBeenCalled();
+    // La reservation a lieu apres la lecture des digests, mais avant de les
+    // marquer en cours : le perdant ne doit rien avoir modifie.
+    expect(prisma.digest.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("ne consomme pas le creneau quand il n'y a rien a envoyer", async () => {
+    vi.mocked(prisma.digest.findMany).mockResolvedValue([] as never);
+
+    const response = await POST(request());
+
+    await expect(response.json()).resolves.toEqual({
+      success: true,
+      message: "No digests to process",
+    });
+    // Le creneau reste ouvert : la repetition de la tache reessaiera dans la
+    // journee des qu'un item existera.
+    expect(prisma.schedule.updateMany).not.toHaveBeenCalled();
+    expect(sendDigest).not.toHaveBeenCalled();
   });
 
   it("reserve le creneau sur la valeur exacte de nextOccurrenceAt", async () => {

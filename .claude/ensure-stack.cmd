@@ -54,7 +54,9 @@ if errorlevel 1 (
 )
 
 rem --- 3. Serveur Next ---
-curl -s -o nul -m 5 http://localhost:3000/login
+rem Delai genereux : un serveur deja lance mais en train de recompiler met
+rem plusieurs secondes a repondre. Trop court, on en demarre un second pour rien.
+curl -s -o nul -m 20 http://localhost:3000/login
 if not errorlevel 1 exit /b 0
 echo [%date% %time%] serveur absent, demarrage... >> "%LOG%"
 rem Start-Process detache le serveur du processus appelant : il survit a la

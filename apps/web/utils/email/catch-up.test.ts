@@ -161,8 +161,9 @@ describe("catchUpEmailAccount", () => {
     const result = await catchUpEmailAccount(baseArgs());
 
     expect(result.newThreadCount).toBe(45);
-    expect(result.processedCount).toBe(40);
-    expect(result.remaining).toBe(5);
+    // Plafond par passe : le reste est signale pour que le cron rappelle.
+    expect(result.processedCount).toBe(12);
+    expect(result.remaining).toBe(33);
   });
 
   it("s'interrompt sans jeter quand l'echeance est depassee", async () => {
@@ -182,9 +183,14 @@ describe("catchUpEmailAccount", () => {
     mockProviderMessages([
       makeMessage("msg-1", "thread-1", "2026-07-24T08:00:00Z"),
     ]);
-    vi.mocked(prisma.executedAction.findMany).mockResolvedValue([
-      { id: "action-1", executedRule: { messageId: "msg-1" } },
-    ] as never);
+    // Le drain tourne deux fois : d'abord pour solder les passes precedentes,
+    // puis pour les actions que les regles viennent de creer. En reel la
+    // seconde requete ne renvoie plus l'action, qui a desormais son item.
+    vi.mocked(prisma.executedAction.findMany)
+      .mockResolvedValueOnce([
+        { id: "action-1", executedRule: { messageId: "msg-1" } },
+      ] as never)
+      .mockResolvedValue([] as never);
     vi.mocked(processDigestItem).mockResolvedValue({ status: "created" });
 
     const result = await catchUpEmailAccount(baseArgs());

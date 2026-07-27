@@ -167,28 +167,6 @@ async function sendEmail({
       logger.error("Missing digest schedule progression");
       return { success: false, message: "Digest schedule is not usable" };
     }
-
-    // Reserve le creneau AVANT d'envoyer. Plusieurs postes partagent la meme
-    // base : sans cela, ils passent tous la verification ci-dessus et envoient
-    // chacun leur recap. La condition porte sur la valeur exacte relue, ce qui
-    // en fait une comparaison-et-echange : un seul poste obtient count = 1.
-    const claim = await prisma.schedule.updateMany({
-      where: {
-        id: digestScheduleData.id,
-        emailAccountId,
-        nextOccurrenceAt: digestScheduleData.nextOccurrenceAt,
-      },
-      data: digestScheduleProgression,
-    });
-
-    if (claim.count === 0) {
-      logger.info("Digest slot already claimed by another machine", {
-        nextOccurrenceAt: digestScheduleData.nextOccurrenceAt,
-      });
-      return { success: true, message: "Digest slot already claimed" };
-    }
-
-    claimedSchedule = true;
   }
 
   const pendingDigests = await prisma.digest.findMany({
@@ -222,6 +200,39 @@ async function sendEmail({
     },
   });
 
+  // Rien a envoyer : on ne touche PAS au planning. Le creneau reste du, et la
+  // repetition de la tache enverra le recap des qu'un item existera. Le
+  // consommer ici ferait perdre la journee entiere des que le rattrapage
+  // echoue, ce qui s'est produit le 27/07.
+  if (pendingDigests.length === 0 && !force) {
+    logger.info("Aucun digest en attente : creneau laisse ouvert");
+    return { success: true, message: "No digests to process" };
+  }
+
+  if (!force && digestScheduleData && digestScheduleProgression) {
+    // Reserve le creneau juste avant d'envoyer. Plusieurs postes partagent la
+    // meme base : sans cela ils passent tous la verification et envoient chacun
+    // leur recap. La condition porte sur la valeur exacte relue, ce qui en fait
+    // une comparaison-et-echange : un seul poste obtient count = 1.
+    const claim = await prisma.schedule.updateMany({
+      where: {
+        id: digestScheduleData.id,
+        emailAccountId,
+        nextOccurrenceAt: digestScheduleData.nextOccurrenceAt,
+      },
+      data: digestScheduleProgression,
+    });
+
+    if (claim.count === 0) {
+      logger.info("Digest slot already claimed by another machine", {
+        nextOccurrenceAt: digestScheduleData.nextOccurrenceAt,
+      });
+      return { success: true, message: "Digest slot already claimed" };
+    }
+
+    claimedSchedule = true;
+  }
+
   if (pendingDigests.length) {
     // Mark all found digests as processing
     await prisma.digest.updateMany({
@@ -237,12 +248,7 @@ async function sendEmail({
   }
 
   try {
-    // Return early if no digests were found, unless force is true
     if (pendingDigests.length === 0) {
-      if (!force) {
-        // Le creneau a deja ete consomme par la reservation : rien a avancer.
-        return { success: true, message: "No digests to process" };
-      }
       // When force is true, send an empty digest to indicate the system is working
       logger.info("Force sending empty digest", { emailAccountId });
     }
