@@ -7,6 +7,11 @@ import type { EmailProvider } from "@/utils/email/types";
 import type { Logger } from "@/utils/logger";
 import { getPremiumUserFilter } from "@/utils/premium";
 import prisma from "@/utils/prisma";
+import {
+  acquireOwnedLock,
+  clearOwnedLock,
+  markOwnedLockProcessed,
+} from "@/utils/redis/owned-lock";
 import type { ParsedMessage } from "@/utils/types";
 import { processHistoryForUser } from "@/utils/webhook/outlook/process-history";
 
@@ -33,6 +38,13 @@ const CATCH_UP_RULES_BUDGET_RATIO = 0.55;
 // concurrence et le provider claude-code ouvre un sous-processus par appel.
 const CATCH_UP_DIGEST_CONCURRENCY = 2;
 const CATCH_UP_PAGE_SIZE = 50;
+// Messages envoyes repris par passe. Sans abonnement Graph, c'est le seul moyen
+// pour l'application de savoir que Cecile a repondu : c'est ce qui retire
+// l'etiquette « a repondre » et alimente le filtre du recap.
+const CATCH_UP_MAX_SENT_PER_PASS = 40;
+const CATCH_UP_SENT_CONCURRENCY = 3;
+const CATCH_UP_SENT_PROCESSING_TTL_SECONDS = 15 * 60;
+const CATCH_UP_SENT_PROCESSED_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 export type CatchUpAccountResult = {
   emailAccountId: string;
@@ -43,6 +55,8 @@ export type CatchUpAccountResult = {
   digestItemsCreated: number;
   /** Items refuses temporairement (quota 24 h) : ils restent a faire. */
   digestItemsDeferred: number;
+  /** Messages envoyes repris : c'est ce qui solde les « a repondre ». */
+  sentProcessedCount: number;
   remaining: number;
 };
 
@@ -155,6 +169,15 @@ export async function catchUpEmailAccount({
     logger: logger.with({ phase: "nouveaux" }),
   });
 
+  const sentResult = await catchUpSentMessages({
+    emailAccountId,
+    email,
+    provider,
+    after,
+    deadlineAt,
+    logger: logger.with({ phase: "envoyes" }),
+  });
+
   // Un fil non traite faute de temps reste a faire : il doit compter dans
   // « remaining » pour que le script rappelle la route.
   const notProcessed = batch.length - processedCount;
@@ -169,15 +192,108 @@ export async function catchUpEmailAccount({
     processedCount,
     digestItemsCreated: drainedFirst.created + drainedAfter.created,
     digestItemsDeferred,
-    // Un item reporte reste a faire : le cron doit rappeler la route.
+    sentProcessedCount: sentResult.processed,
+    // Tout ce qui reste a faire pese ici, pour que le script rappelle la route
+    // dans la foulee au lieu d'attendre la repetition suivante.
     remaining: Math.max(
       0,
       newestPerThread.length -
         batch.length +
         notProcessed +
-        digestItemsDeferred,
+        digestItemsDeferred +
+        sentResult.pending,
     ),
   };
+}
+
+/**
+ * Rejoue les messages ENVOYES depuis `after`. processHistoryForUser les accepte
+ * et declenche handleOutboundMessage, qui retire l'etiquette de relance et met
+ * a jour le suivi des reponses. Sans abonnement Graph, c'est le seul moment ou
+ * l'application apprend que Cecile a repondu.
+ *
+ * Dedoublonnage propre a cette passe : un message envoye ne cree PAS
+ * d'ExecutedRule, on ne peut donc pas reutiliser le filtre de la boite de
+ * reception. Sans marqueur, les memes envois seraient rejoues a chaque passe.
+ */
+async function catchUpSentMessages({
+  emailAccountId,
+  email,
+  provider,
+  after,
+  deadlineAt,
+  logger,
+}: {
+  emailAccountId: string;
+  email: string;
+  provider: EmailProvider;
+  after: Date;
+  deadlineAt: number;
+  logger: Logger;
+}) {
+  if (Date.now() > deadlineAt) return 0;
+
+  // Trie par date d'envoi decroissante cote fournisseur : on prend large puis
+  // on coupe sur la fenetre.
+  const sent = (await provider.getSentMessages(CATCH_UP_MAX_SENT_PER_PASS * 2))
+    .filter((message) => new Date(message.date).getTime() >= after.getTime())
+    .slice(0, CATCH_UP_MAX_SENT_PER_PASS);
+
+  if (!sent.length) return { processed: 0, pending: 0 };
+
+  let processed = 0;
+  let pending = 0;
+
+  await runWithBoundedConcurrency({
+    items: sent,
+    concurrency: CATCH_UP_SENT_CONCURRENCY,
+    run: async (message) => {
+      // Echeance atteinte : le message reste a faire, il doit peser dans
+      // « remaining » pour que le script rappelle la route tout de suite.
+      if (Date.now() > deadlineAt) {
+        pending++;
+        return;
+      }
+
+      const key = `catchup-sent:${emailAccountId}:${message.id}`;
+      const lockToken = await acquireOwnedLock({
+        key,
+        processingTtlSeconds: CATCH_UP_SENT_PROCESSING_TTL_SECONDS,
+      });
+      if (!lockToken) return;
+
+      try {
+        await processHistoryForUser({
+          emailAddress: email,
+          resourceData: { id: message.id, conversationId: message.threadId },
+          logger: logger.with({ messageId: message.id }),
+        });
+
+        await markOwnedLockProcessed({
+          key,
+          lockToken,
+          processedStatus: "processed",
+          processedTtlSeconds: CATCH_UP_SENT_PROCESSED_TTL_SECONDS,
+        });
+        processed++;
+      } catch (error) {
+        // Liberer, sinon un echec passager rendrait la reponse invisible.
+        await clearOwnedLock({ key, lockToken });
+        logger.error("Echec du traitement d'un message envoye", {
+          messageId: message.id,
+          error,
+        });
+      }
+    },
+  });
+
+  logger.info("Messages envoyes repris", {
+    candidats: sent.length,
+    traites: processed,
+    restants: pending,
+  });
+
+  return { processed, pending };
 }
 
 /**

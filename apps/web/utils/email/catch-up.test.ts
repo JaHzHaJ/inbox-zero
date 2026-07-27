@@ -5,6 +5,7 @@ import { catchUpEmailAccount, getEmailAccountsToCatchUp } from "./catch-up";
 import { createEmailProvider } from "@/utils/email/provider";
 import { processHistoryForUser } from "@/utils/webhook/outlook/process-history";
 import { processDigestItem } from "@/utils/digest/process-digest-item";
+import { acquireOwnedLock } from "@/utils/redis/owned-lock";
 import type { ParsedMessage } from "@/utils/types";
 
 vi.mock("@/utils/prisma");
@@ -22,6 +23,11 @@ vi.mock("@/utils/ai/content-sanitizer", () => ({
 }));
 vi.mock("@/utils/premium", () => ({
   getPremiumUserFilter: vi.fn(() => ({})),
+}));
+vi.mock("@/utils/redis/owned-lock", () => ({
+  acquireOwnedLock: vi.fn().mockResolvedValue("lock-token"),
+  markOwnedLockProcessed: vi.fn().mockResolvedValue(true),
+  clearOwnedLock: vi.fn().mockResolvedValue(true),
 }));
 
 const logger = createTestLogger();
@@ -49,13 +55,19 @@ function makeMessage(
 }
 
 let getMessagesWithPagination: ReturnType<typeof vi.fn>;
+let getSentMessages: ReturnType<typeof vi.fn>;
 
-function mockProviderMessages(messages: ParsedMessage[]) {
+function mockProviderMessages(
+  messages: ParsedMessage[],
+  sentMessages: ParsedMessage[] = [],
+) {
   getMessagesWithPagination = vi
     .fn()
     .mockResolvedValue({ messages, nextPageToken: undefined });
+  getSentMessages = vi.fn().mockResolvedValue(sentMessages);
   vi.mocked(createEmailProvider).mockResolvedValue({
     getMessagesWithPagination,
+    getSentMessages,
   } as never);
 }
 
@@ -204,6 +216,42 @@ describe("catchUpEmailAccount", () => {
       expect.anything(),
     );
     expect(result.digestItemsCreated).toBe(1);
+  });
+
+  it("rejoue les messages envoyes de la fenetre, pas les plus anciens", async () => {
+    mockProviderMessages(
+      [],
+      [
+        makeMessage("sent-recent", "thread-1", "2026-07-25T10:00:00Z"),
+        // Hors fenetre (after = 23/07) : doit etre ignore.
+        makeMessage("sent-vieux", "thread-9", "2026-07-01T10:00:00Z"),
+      ],
+    );
+
+    const result = await catchUpEmailAccount(baseArgs());
+
+    expect(result.sentProcessedCount).toBe(1);
+    // C'est ce passage qui declenche handleOutboundMessage, donc le retrait de
+    // l'etiquette « a repondre ».
+    expect(processHistoryForUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resourceData: { id: "sent-recent", conversationId: "thread-1" },
+      }),
+    );
+  });
+
+  it("ne rejoue pas deux fois le meme message envoye", async () => {
+    mockProviderMessages(
+      [],
+      [makeMessage("sent-1", "thread-1", "2026-07-25T10:00:00Z")],
+    );
+    // Verrou deja pose : la passe precedente l'a traite.
+    vi.mocked(acquireOwnedLock).mockResolvedValue(null);
+
+    const result = await catchUpEmailAccount(baseArgs());
+
+    expect(result.sentProcessedCount).toBe(0);
+    expect(processHistoryForUser).not.toHaveBeenCalled();
   });
 
   it("signale les items reportes et les garde a faire", async () => {

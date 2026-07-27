@@ -27,6 +27,7 @@ import {
   sortDigestItemsByDateDesc,
 } from "@/utils/digest/digest-item-meta";
 import { createEmailProvider } from "@/utils/email/provider";
+import type { EmailProvider } from "@/utils/email/types";
 import { getEmailUrlForOptionalMessage } from "@/utils/url";
 import { sleep } from "@/utils/sleep";
 import { withQstashOrInternal } from "@/utils/qstash";
@@ -87,6 +88,84 @@ export const POST = withError(
     }
   }),
 );
+
+/** Nombre d'envois relus pour detecter les reponses : large, mais un seul appel. */
+const REPLIED_LOOKUP_MAX_SENT = 200;
+
+/** Date du plus ancien mail present au recap : borne basse de la recherche. */
+function earliestItemDate(
+  digests: { items: { messageId: string }[] }[],
+  messageMap: Map<string, ParsedMessage>,
+): Date {
+  let earliest = Number.POSITIVE_INFINITY;
+
+  for (const digest of digests) {
+    for (const item of digest.items) {
+      const message = messageMap.get(item.messageId);
+      if (!message) continue;
+      const time = new Date(message.date).getTime();
+      if (time < earliest) earliest = time;
+    }
+  }
+
+  return Number.isFinite(earliest)
+    ? new Date(earliest)
+    : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+}
+
+/**
+ * Fil de discussion -> date du dernier message envoye par l'utilisateur.
+ * Un seul appel au fournisseur, pas un par item.
+ */
+async function getRepliedThreadDates({
+  emailProvider,
+  since,
+  logger,
+}: {
+  emailProvider: EmailProvider;
+  since: Date;
+  logger: Logger;
+}): Promise<Map<string, number>> {
+  const replied = new Map<string, number>();
+
+  try {
+    const sent = await emailProvider.getSentMessages(REPLIED_LOOKUP_MAX_SENT);
+
+    for (const message of sent) {
+      const time = new Date(message.date).getTime();
+      if (time < since.getTime()) continue;
+
+      const known = replied.get(message.threadId);
+      if (!known || time > known) replied.set(message.threadId, time);
+    }
+  } catch (error) {
+    // Degradation gracieuse : mieux vaut un recap trop complet que pas de recap.
+    logger.error(
+      "Lecture des envois impossible, filtre « deja repondu » ignore",
+      {
+        error,
+      },
+    );
+  }
+
+  return replied;
+}
+
+/** Solde des digests sans envoyer de mail : rien a signaler. */
+async function closeDigestsWithoutSending(digestIds: string[]) {
+  if (!digestIds.length) return;
+
+  await prisma.$transaction([
+    prisma.digest.updateMany({
+      where: { id: { in: digestIds } },
+      data: { status: DigestStatus.SENT, sentAt: new Date() },
+    }),
+    prisma.digestItem.updateMany({
+      where: { digestId: { in: digestIds } },
+      data: { content: "[REDACTED]" },
+    }),
+  ]);
+}
 
 async function getDigestSchedule({
   emailAccountId,
@@ -179,6 +258,7 @@ async function sendEmail({
       items: {
         select: {
           messageId: true,
+          threadId: true,
           content: true,
           action: {
             select: {
@@ -292,6 +372,17 @@ async function sendEmail({
     ) as Digest;
 
     // Transform and group in a single pass
+    // Regle metier : le recap ne porte que sur les mails auxquels Cecile n'a
+    // PAS deja repondu. Le filtre est applique ici, a l'envoi, et non a la
+    // creation de l'item : c'est le seul moment qui capte une reponse ecrite
+    // entre la constitution du recap et son depart.
+    const repliedThreads = await getRepliedThreadDates({
+      emailProvider,
+      since: earliestItemDate(pendingDigests, messageMap),
+      logger,
+    });
+    let repliedSkipped = 0;
+
     const executedRulesByRule = pendingDigests.reduce((acc, digest) => {
       digest.items.forEach((item) => {
         const message = messageMap.get(item.messageId);
@@ -299,6 +390,12 @@ async function sendEmail({
           logger.warn("Message not found, skipping digest item", {
             messageId: item.messageId,
           });
+          return;
+        }
+
+        const repliedAt = repliedThreads.get(item.threadId);
+        if (repliedAt && repliedAt > new Date(message.date).getTime()) {
+          repliedSkipped++;
           return;
         }
 
@@ -366,6 +463,21 @@ async function sendEmail({
     }
 
     if (Object.keys(executedRulesByRule).length === 0) {
+      // Cas nominal : Cecile a repondu a tout. Les digests sont soldes, sinon
+      // ils resteraient en PROCESSING et reviendraient indefiniment.
+      if (repliedSkipped > 0) {
+        logger.info("Recap vide : tous les fils ont recu une reponse", {
+          repliedSkipped,
+        });
+        await closeDigestsWithoutSending(
+          pendingDigests.map((digest) => digest.id),
+        );
+        return {
+          success: true,
+          message: `Nothing to send: ${repliedSkipped} thread(s) already replied`,
+        };
+      }
+
       logger.info("No executed rules found, skipping digest email");
       return {
         success: true,
@@ -375,7 +487,7 @@ async function sendEmail({
 
     const token = await createUnsubscribeToken({ emailAccountId });
 
-    logger.info("Sending digest");
+    logger.info("Sending digest", { repliedSkipped });
 
     await sendDigest({
       emailAccountId,

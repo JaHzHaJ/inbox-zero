@@ -76,6 +76,8 @@ function setupDueSchedule() {
         },
       },
     ]),
+    // Par defaut : aucune reponse envoyee.
+    getSentMessages: vi.fn().mockResolvedValue([]),
   } as never);
 
   vi.mocked(prisma.digest.findMany).mockResolvedValue([
@@ -84,6 +86,7 @@ function setupDueSchedule() {
       items: [
         {
           messageId: "msg-1",
+          threadId: "thread-1",
           content: JSON.stringify({ content: "Facture a regler." }),
           action: {
             executedRule: {
@@ -193,6 +196,105 @@ describe("reservation du creneau de recap", () => {
         data: { status: DigestStatus.FAILED },
       }),
     );
+  });
+
+  it("ecarte du recap un fil auquel on a deja repondu", async () => {
+    vi.mocked(prisma.schedule.updateMany).mockResolvedValue({
+      count: 1,
+    } as never);
+    // Reponse envoyee APRES le mail recu -> le fil est solde.
+    vi.mocked(createEmailProvider).mockResolvedValue({
+      getMessagesBatch: vi.fn().mockResolvedValue([
+        {
+          id: "msg-1",
+          threadId: "thread-1",
+          date: "2026-07-26T09:00:00.000Z",
+          headers: {
+            from: "Fournisseur <fournisseur@example.com>",
+            to: "user@example.com",
+            subject: "Facture 2026-07",
+            date: "2026-07-26T09:00:00.000Z",
+          },
+        },
+      ]),
+      getSentMessages: vi.fn().mockResolvedValue([
+        {
+          id: "sent-1",
+          threadId: "thread-1",
+          date: "2026-07-26T11:00:00.000Z",
+        },
+      ]),
+    } as never);
+
+    const response = await POST(request());
+
+    // Plus rien a signaler : aucun mail n'est envoye, mais les digests sont
+    // soldes pour ne pas revenir demain.
+    expect(sendDigest).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({ success: true });
+    expect(prisma.$transaction).toHaveBeenCalled();
+  });
+
+  it("conserve un fil dont la reponse est anterieure au mail recu", async () => {
+    vi.mocked(prisma.schedule.updateMany).mockResolvedValue({
+      count: 1,
+    } as never);
+    vi.mocked(createEmailProvider).mockResolvedValue({
+      getMessagesBatch: vi.fn().mockResolvedValue([
+        {
+          id: "msg-1",
+          threadId: "thread-1",
+          date: "2026-07-26T09:00:00.000Z",
+          headers: {
+            from: "Fournisseur <fournisseur@example.com>",
+            to: "user@example.com",
+            subject: "Facture 2026-07",
+            date: "2026-07-26T09:00:00.000Z",
+          },
+        },
+      ]),
+      // Envoi anterieur : c'est le fournisseur qui a relance depuis.
+      getSentMessages: vi.fn().mockResolvedValue([
+        {
+          id: "sent-1",
+          threadId: "thread-1",
+          date: "2026-07-25T08:00:00.000Z",
+        },
+      ]),
+    } as never);
+
+    await POST(request());
+
+    expect(sendDigest).toHaveBeenCalled();
+  });
+
+  it("envoie quand meme si la lecture des envois echoue", async () => {
+    vi.mocked(prisma.schedule.updateMany).mockResolvedValue({
+      count: 1,
+    } as never);
+    vi.mocked(createEmailProvider).mockResolvedValue({
+      getMessagesBatch: vi.fn().mockResolvedValue([
+        {
+          id: "msg-1",
+          threadId: "thread-1",
+          date: "2026-07-26T09:00:00.000Z",
+          headers: {
+            from: "Fournisseur <fournisseur@example.com>",
+            to: "user@example.com",
+            subject: "Facture 2026-07",
+            date: "2026-07-26T09:00:00.000Z",
+          },
+        },
+      ]),
+      getSentMessages: vi
+        .fn()
+        .mockRejectedValue(new Error("Graph indisponible")),
+    } as never);
+
+    await POST(request());
+
+    // Degradation gracieuse : mieux vaut un recap trop complet que pas de recap.
+    expect(sendDigest).toHaveBeenCalled();
   });
 
   it("ne reserve pas quand le planning n'est pas du", async () => {
