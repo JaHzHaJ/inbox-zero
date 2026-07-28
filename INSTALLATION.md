@@ -197,6 +197,11 @@ La fabrication **entretient aussi le dossier OneDrive** : elle y rafraîchit le 
 `INSTALLATION.md`, et supprime les anciennes copies de scripts posées à plat —
 elles avaient dérivé une fois, elles ne le pourront plus.
 
+Pour une **autre organisation** (aucun de nos secrets, assistant de première
+configuration inclus) : `.\.claude\make-kit.ps1 -Generique` →
+`Gestion-Mails-Kit-Generique.zip` + guide dédié
+[INSTALLATION-NOUVELLE-ORGANISATION.md](INSTALLATION-NOUVELLE-ORGANISATION.md).
+
 ## Désactiver ou désinstaller
 
 Double-cliquer **`desinstaller.cmd`** — un seul désinstalleur, qui **détecte** le mode au

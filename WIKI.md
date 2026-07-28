@@ -18,6 +18,7 @@ Ce wiki est la vue d'ensemble — le pas-à-pas d'installation vit dans
 - [Dépannage](#dépannage)
 - [Sécurité et secrets](#sécurité-et-secrets)
 - [Mettre à jour](#mettre-à-jour)
+- [Déployer chez une autre organisation](#déployer-chez-une-autre-organisation)
 - [Journal de bord](#journal-de-bord)
 
 ## Ce que fait l'application
@@ -168,6 +169,27 @@ pnpm --dir apps/web exec prisma generate
 …puis redémarrer le serveur (raccourci Bureau). Si les scripts du kit ont
 changé, refabriquer le ZIP : `.\.claude\make-kit.ps1`.
 
+## Déployer chez une autre organisation
+
+```powershell
+.\.claude\make-kit.ps1 -Generique
+```
+
+Produit **`Gestion-Mails-Kit-Generique.zip`** : le kit habituel **sans aucun
+secret**, plus un **assistant** (`configurer-services`) qui guide l'autre
+organisation dans la création de **ses** comptes de service — application
+Azure AD dans **son** tenant (3 URI de redirection, 8 permissions Graph,
+consentement admin), Resend, et Supabase/Upstash si elle choisit le mode
+partagé. L'assistant valide chaque saisie, génère les secrets internes
+(chiffrement, clés d'API) et écrit un `.env` complet ; l'installeur crée
+ensuite le **schéma de base** (une base vide est détectée et migrée — une base
+peuplée n'est jamais touchée).
+
+Mode d'emploi complet côté destinataire :
+[INSTALLATION-NOUVELLE-ORGANISATION.md](INSTALLATION-NOUVELLE-ORGANISATION.md)
+(embarqué dans le ZIP). Point de licence : exemption jusqu'à **5 utilisateurs**
+en entreprise, pas de monétisation.
+
 ## Journal de bord
 
 | Date | Événement |
@@ -176,3 +198,4 @@ changé, refabriquer le ZIP : `.\.claude\make-kit.ps1`.
 | 27/07/2026 | Kit ZIP réparé (piège `$PSScriptRoot` en PowerShell 5.1), purge quotidienne des brouillons, refonte des règles |
 | 28/07/2026 | Deux modes (local / partagé) et outillage multi-postes : bascule, sauvegarde/restauration, remise en service, vérificateur |
 | 28/07/2026 | Audit du kit : dossier OneDrive assaini (le ZIP devient le seul chemin d'installation, compagnons entretenus par `make-kit.ps1`), correctifs `verifier-installation.ps1` et `install.ps1`, création de ce wiki |
+| 28/07/2026 | Kit **générique** pour une autre organisation : assistant `configurer-services`, création du schéma sur base vide, noms de ZIP distincts |
