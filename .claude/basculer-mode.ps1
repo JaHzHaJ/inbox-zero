@@ -82,7 +82,8 @@ if ($disponibles.Count -eq 0) {
 Le fichier .env ne contient aucune ligne en reserve pour le mode $Vers.
 Il devrait comporter des lignes de la forme :
     $marqueurCible`DATABASE_URL="..."
-Recuperer un .env complet dans le dossier OneDrive " Gestion Mails ".
+Recuperer un .env complet dans le dossier OneDrive " Gestion Mails ",
+ou en construire un : configurer-services.cmd (nouvelle organisation).
 "@
 }
 Info "$($disponibles.Count) ligne(s) en reserve trouvee(s) pour le mode $Vers"
@@ -120,6 +121,22 @@ if ($verif -ne $Vers) {
   Stop2 "La bascule n'a pas pris ($verif au lieu de $Vers). Fichier restaure."
 }
 Ok "Fichier .env bascule en mode $Vers"
+
+# En mode local, docker-compose lit le jeton SRH dans le .env RACINE du depot :
+# on l'aligne sur la valeur qui vient d'etre activee, sinon le conteneur
+# redis-http refuserait toutes les requetes de l'application.
+if ($Vers -eq 'local') {
+  $m = Select-String -Path $fichierEnv -Pattern '^UPSTASH_REDIS_TOKEN=(.+)$' | Select-Object -First 1
+  if ($m) {
+    $jetonSrh = $m.Matches[0].Groups[1].Value.Trim().Trim('"')
+    [System.IO.File]::WriteAllLines((Join-Path $RepoPath '.env'), [string[]] @(
+      '# Variables lues par docker-compose.dev.yml (compose lit le .env a la racine).',
+      '# Doit rester aligne avec UPSTASH_REDIS_TOKEN de apps/web/.env.',
+      "UPSTASH_REDIS_TOKEN=$jetonSrh"
+    ), (New-Object System.Text.UTF8Encoding $false))
+    Info 'Jeton SRH aligne dans le .env racine (docker-compose).'
+  }
+}
 
 # Le serveur garde sa connexion a l'ancienne base en memoire : sans redemarrage
 # la bascule n'a aucun effet visible.

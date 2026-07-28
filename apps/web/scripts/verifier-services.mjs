@@ -10,6 +10,9 @@
  * Usage, depuis apps/web :
  *   node scripts/verifier-services.mjs
  *   node scripts/verifier-services.mjs --avec-ia
+ *   node scripts/verifier-services.mjs --tolerer-base-neuve   # juste apres une
+ *       premiere installation : une base migree mais encore sans compte est
+ *       acceptee, au lieu d'etre traitee comme une base a restaurer.
  */
 
 import { existsSync } from "node:fs";
@@ -45,6 +48,7 @@ dotenv.config({
 });
 
 const AVEC_IA = process.argv.includes("--avec-ia");
+const TOLERER_BASE_NEUVE = process.argv.includes("--tolerer-base-neuve");
 
 let echecs = 0;
 const ok = (texte) => console.log(`  [OK]    ${texte}`);
@@ -122,10 +126,19 @@ async function verifierBase(mode) {
     );
     const { comptes, regles, migrations } = rows[0];
     if (comptes === 0 && regles === 0) {
-      echec(
-        "la base repond mais elle est VIDE",
-        "Restaurer la derniere sauvegarde : remise-en-service.cmd",
-      );
+      // Le meme etat (0 compte, 0 regle) a deux sens opposes : base a
+      // restaurer en exploitation, base normale juste apres une premiere
+      // installation. Seul l'installeur, qui vient de migrer, peut le dire.
+      if (TOLERER_BASE_NEUVE && migrations > 0) {
+        ok(
+          `base neuve : ${migrations} migrations appliquees, aucun compte encore (premier login a faire)`,
+        );
+      } else {
+        echec(
+          "la base repond mais elle est VIDE",
+          "Restaurer la derniere sauvegarde : remise-en-service.cmd",
+        );
+      }
     } else {
       ok(
         `base : ${comptes} compte(s) de messagerie, ${regles} regles, ${migrations} migrations`,

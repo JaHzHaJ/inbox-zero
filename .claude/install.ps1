@@ -97,13 +97,31 @@ Write-Host "=== Installation de Gestion Mails ===" -ForegroundColor White
 Info "Depot cible : $RepoPath"
 
 # --- 0. Mode -----------------------------------------------------------------
+# Le defaut propose suit le .env que l'etape 4 retiendra : celui du kit La
+# Minga est en mode partage, un kit generique n'en a pas encore (-> local).
+# Ainsi " Entree partout " ne peut pas contredire le .env disponible.
+$baseOneDrive = if ($env:OneDriveCommercial) { $env:OneDriveCommercial } else { $env:OneDrive }
+$defautMode = 'local'
+$candidatsDefaut = @((Join-Path $PSScriptRoot '.env'))
+if ($baseOneDrive) { $candidatsDefaut += (Join-Path $baseOneDrive 'Gestion Mails\.env') }
+foreach ($c in $candidatsDefaut) {
+  if (Test-Path $c) {
+    # Ancre ^ : ignorer les lignes en reserve " # MODE-LOCAL DATABASE_URL=... ".
+    $ligne = Select-String -Path $c -Pattern '^DATABASE_URL=' | Select-Object -First 1
+    if ($ligne) {
+      $defautMode = if ($ligne.Line -match 'localhost|127\.0\.0\.1|@db:') { 'local' } else { 'partage' }
+    }
+    break
+  }
+}
+
 if (-not $Mode) {
   $Mode = Demander 'Comment ce poste doit-il fonctionner ?' @(
     @{ valeur = 'partage'; titre = 'Partage avec un autre poste';
        detail = 'Base et verrous heberges (Supabase, Upstash). Les postes voient les memes regles et le meme historique, un seul recap part le matin. Pas de Docker.' },
     @{ valeur = 'local'; titre = 'Ce poste tout seul';
        detail = 'Base et Redis dans Docker, ici. Autonome et gratuit, mais rien ne se partage avec un autre poste.' }
-  ) 'partage'
+  ) $defautMode
 }
 Ok "Mode : $Mode"
 
@@ -194,17 +212,22 @@ Etape '4/11 Fichier .env (secrets)'
 # suffixe est essaye en premier, le .env generique reste accepte pour les kits
 # fabriques avant l'arrivee des deux modes.
 $suffixe = if ($Mode -eq 'local') { '.env.local-docker' } else { '.env.partage' }
+$secretsExplicites = [bool] $SecretsPath
 
 if (-not $SecretsPath) {
   # Priorite aux fichiers poses A COTE de ce script : c'est ce qui rend le kit
-  # ZIP autonome, decompressable n'importe ou. OneDrive n'est que le repli.
-  $baseOneDrive = if ($env:OneDriveCommercial) { $env:OneDriveCommercial } else { $env:OneDrive }
+  # ZIP autonome, decompressable n'importe ou. OneDrive n'est que le repli --
+  # et il peut manquer entierement sur le poste d'une autre organisation.
   $candidats = @(
     (Join-Path $PSScriptRoot $suffixe),
-    (Join-Path $PSScriptRoot '.env'),
-    (Join-Path $baseOneDrive "Gestion Mails\$suffixe"),
-    (Join-Path $baseOneDrive 'Gestion Mails\.env')
+    (Join-Path $PSScriptRoot '.env')
   )
+  if ($baseOneDrive) {
+    $candidats += @(
+      (Join-Path $baseOneDrive "Gestion Mails\$suffixe"),
+      (Join-Path $baseOneDrive 'Gestion Mails\.env')
+    )
+  }
   foreach ($c in $candidats) {
     if (Test-Path $c) { $SecretsPath = $c; break }
   }
@@ -212,6 +235,22 @@ if (-not $SecretsPath) {
 }
 
 $cible = Join-Path $RepoPath 'apps\web\.env'
+
+# Aucun .env nulle part : premiere installation d'une NOUVELLE organisation.
+# Plutot que d'echouer, proposer l'assistant qui construit le fichier.
+if (-not $secretsExplicites -and -not (Test-Path $SecretsPath) -and -not (Test-Path $cible)) {
+  $assistant = Join-Path $PSScriptRoot 'configurer-services.ps1'
+  if ((Test-Path $assistant) -and -not [Console]::IsInputRedirected) {
+    Info 'Aucun fichier .env trouve : premiere installation pour cette organisation ?'
+    $r = Read-Host "    Lancer l'assistant de configuration maintenant ? (O/n)"
+    if ($r -notmatch '^(n|N)') {
+      & $assistant -Mode $Mode -Sortie $PSScriptRoot
+      if ($LASTEXITCODE -eq 0 -and (Test-Path (Join-Path $PSScriptRoot '.env'))) {
+        $SecretsPath = Join-Path $PSScriptRoot '.env'
+      }
+    }
+  }
+}
 
 if (Test-Path $SecretsPath) {
   Copy-Item $SecretsPath $cible -Force
@@ -223,7 +262,9 @@ if (Test-Path $SecretsPath) {
   Echec 'Fichier .env' @"
 Introuvable : $SecretsPath
 Verifier que OneDrive a fini de synchroniser le dossier " Gestion Mails ",
-ou passer le chemin explicitement : .\install.ps1 -SecretsPath <chemin\.env>
+passer le chemin explicitement (.\install.ps1 -SecretsPath <chemin\.env>),
+ou, pour une NOUVELLE organisation, construire le fichier :
+double-cliquer configurer-services.cmd.
 "@
 }
 
@@ -259,6 +300,21 @@ Une adresse locale signifierait que les postes ne partagent pas leurs verrous :
 ils traiteraient les memes mails chacun de leur cote, en double.
 "@
 }
+
+# En mode local, docker-compose lit le jeton SRH dans le .env RACINE du depot :
+# on l'aligne systematiquement sur la valeur active (rien d'autre ne verifie
+# cet alignement, et un desaccord = Redis local qui refuse toutes les requetes).
+if ($Mode -eq 'local') {
+  $m = Select-String -Path $cible -Pattern '^UPSTASH_REDIS_TOKEN=(.+)$' | Select-Object -First 1
+  if (-not $m) { Echec 'Fichier .env' 'UPSTASH_REDIS_TOKEN est absent : impossible d aligner docker-compose.' }
+  $jetonSrh = $m.Matches[0].Groups[1].Value.Trim().Trim('"')
+  [System.IO.File]::WriteAllLines((Join-Path $RepoPath '.env'), [string[]] @(
+    '# Variables lues par docker-compose.dev.yml (compose lit le .env a la racine).',
+    '# Doit rester aligne avec UPSTASH_REDIS_TOKEN de apps/web/.env.',
+    "UPSTASH_REDIS_TOKEN=$jetonSrh"
+  ), (New-Object System.Text.UTF8Encoding $false))
+  Info 'Jeton SRH aligne dans le .env racine (docker-compose).'
+}
 Ok "Variables essentielles presentes et coherentes avec le mode $Mode"
 
 # --- 5. Dependances ----------------------------------------------------------
@@ -281,7 +337,9 @@ Etape '6/11 Client Prisma'
 
 Push-Location (Join-Path $RepoPath 'apps\web')
 try {
-  # Pas de " migrate " : la base est partagee entre les postes, elle fait foi.
+  # Generation du client seulement. La creation du schema, elle, se joue a
+  # l'etape 8 : uniquement si la base est VIDE (premiere installation d'une
+  # organisation). Une base deja peuplee est partagee et fait foi.
   & .\node_modules\.bin\prisma.CMD generate
   if ($LASTEXITCODE -ne 0) { Echec 'prisma generate' "Code de sortie $LASTEXITCODE" }
   Ok 'Client Prisma genere'
@@ -303,8 +361,8 @@ if ($LASTEXITCODE -ne 0) {
   Info "relancer .claude\configurer-ia.cmd quand ce sera regle."
 }
 
-# --- 8. Verification des services --------------------------------------------
-Etape '8/11 Verification des services'
+# --- 8. Schema de base et verification des services ---------------------------
+Etape '8/11 Schema de base et verification des services'
 
 if ($Mode -eq 'local') {
   Info 'Demarrage des conteneurs avant verification...'
@@ -313,9 +371,32 @@ if ($Mode -eq 'local') {
   & (Join-Path $RepoPath '.claude\ensure-stack.cmd') | Out-Null
 }
 
+$script:BaseNeuve = $false
 Push-Location (Join-Path $RepoPath 'apps\web')
 try {
-  & node 'scripts\verifier-services.mjs'
+  # Une organisation neuve part d'une base SANS aucune table : il faut creer le
+  # schema. Sur une base deja peuplee on ne migre JAMAIS a l'installation :
+  # elle est partagee entre les postes et fait foi.
+  & node 'scripts\detecter-base-vide.mjs'
+  switch ($LASTEXITCODE) {
+    0 { Info 'Base deja peuplee : aucune migration a l installation.' }
+    3 {
+      Info 'Base vide : creation du schema (environ 230 migrations, quelques minutes)...'
+      & .\node_modules\.bin\prisma.CMD migrate deploy
+      if ($LASTEXITCODE -ne 0) { Echec 'prisma migrate deploy' "Code de sortie $LASTEXITCODE" }
+      $script:BaseNeuve = $true
+      Ok 'Schema de base cree'
+    }
+    default { Echec 'Detection du schema' 'Base injoignable (details ci-dessus).' }
+  }
+
+  $argsVerif = @('scripts\verifier-services.mjs')
+  if ($script:BaseNeuve) {
+    # Une base tout juste migree n'a encore ni compte ni regle : sans ce
+    # drapeau, la protection " base VIDE -> restaurer " la refuserait.
+    $argsVerif += '--tolerer-base-neuve'
+  }
+  & node @argsVerif
   if ($LASTEXITCODE -ne 0) {
     Echec 'Verification des services' @"
 La base ou Redis ne repondent pas (details ci-dessus).
