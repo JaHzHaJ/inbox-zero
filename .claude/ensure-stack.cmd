@@ -1,7 +1,14 @@
 @echo off
-rem Monte toute la pile Gestion Mails : Docker Desktop -> conteneurs -> serveur.
-rem Appele par digest-cron.cmd et ouvrir-gestion-mails.cmd. Sort 0 si tout repond.
+rem Monte la pile Gestion Mails et sort 0 si tout repond.
+rem Appele par digest-cron.cmd et ouvrir-gestion-mails.cmd.
 rem Argument 1 optionnel : fichier journal.
+rem
+rem Deux modes, DEDUITS du .env (aucun fichier d'etat a synchroniser, donc
+rem aucun reglage qui puisse mentir sur la realite) :
+rem   - LOCAL   : base et Redis dans Docker -> moteur + conteneurs + serveur
+rem   - PARTAGE : base Supabase et Redis Upstash -> serveur seulement
+rem En mode partage on economise jusqu'a 6 minutes de demarrage a froid, et le
+rem poste n'a plus besoin de Docker du tout.
 setlocal
 rem Racine deduite du script : aucun chemin en dur, portable d'un poste a l'autre.
 for %%I in ("%~dp0..") do set "ROOT=%%~fI"
@@ -14,7 +21,18 @@ set "LOG=%~1"
 if not defined LOG set "LOG=%LOGDIR%\ensure-stack.log"
 for %%F in ("%LOG%") do if %%~zF GTR 5242880 move /y "%LOG%" "%LOG%.1" >nul 2>&1
 
-rem --- 1. Moteur Docker ---
+rem --- 0. Mode ---
+rem findstr sur le fichier plutot qu'une variable : l'URL contient un "&", que
+rem cmd interpreterait comme un separateur de commandes. L'ancrage "^" est
+rem indispensable : il ignore la ligne "# MODE-LOCAL DATABASE_URL=...localhost"
+rem laissee en commentaire pour permettre le retour arriere.
+set "MODE=partage"
+findstr /i /r /c:"^DATABASE_URL=.*localhost" /c:"^DATABASE_URL=.*127\.0\.0\.1" "%ROOT%\apps\web\.env" >nul 2>&1
+if not errorlevel 1 set "MODE=local"
+echo [%date% %time%] mode %MODE% >> "%LOG%"
+if /i "%MODE%"=="partage" goto :serveur
+
+rem --- 1. Moteur Docker (mode local uniquement) ---
 docker info >nul 2>&1
 if not errorlevel 1 goto :docker_ok
 
@@ -55,14 +73,15 @@ goto :eof
 
 :docker_ok
 
-rem --- 2. Conteneurs (idempotent : remonte Postgres/Redis arretes) ---
+rem --- 2. Conteneurs (mode local ; idempotent : remonte Postgres/Redis arretes) ---
 docker compose -f "%ROOT%\docker-compose.dev.yml" up -d >> "%LOG%" 2>&1
 if errorlevel 1 (
   echo [%date% %time%] ERREUR: docker compose up a echoue >> "%LOG%"
   exit /b 3
 )
 
-rem --- 3. Serveur Next ---
+:serveur
+rem --- 3. Serveur Next (les deux modes) ---
 rem Delai genereux : un serveur deja lance mais en train de recompiler met
 rem plusieurs secondes a repondre. Trop court, on en demarre un second pour rien.
 curl -s -o nul -m 20 http://localhost:3000/login

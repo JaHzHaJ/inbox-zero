@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { subDays } from "date-fns/subDays";
 import prisma from "@/utils/prisma";
+import { recupererCreneauxAbandonnes } from "@/utils/digest/creneau-abandonne";
 import { withError } from "@/utils/middleware";
 import { hasCronSecret, hasPostCronSecret } from "@/utils/cron";
 import { captureException } from "@/utils/error";
@@ -45,6 +46,8 @@ async function sendDigestAllUpdate(
   { sync = false }: { sync?: boolean } = {},
 ) {
   logger.info("Sending digest all update", { sync });
+
+  await recupererCreneauxAbandonnes(logger);
 
   const now = new Date();
 

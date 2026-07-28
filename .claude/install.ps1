@@ -12,15 +12,28 @@
 
 .EXAMPLE
   .\install.ps1
+  .\install.ps1 -Mode partage
   .\install.ps1 -RepoPath D:\dev\inbox-zero -SkipSmokeTest
+
+.NOTES
+  Deux modes de fonctionnement :
+    local   - base et Redis dans Docker, sur ce poste. Autonome, ne depend
+              d'aucun service exterieur, mais ne se partage pas.
+    partage - base Supabase et Redis Upstash. Plusieurs postes se partagent
+              une seule boite : un seul recap par jour, historique commun.
+  Sans -Mode, la question est posee.
 #>
 [CmdletBinding()]
 param(
+  [ValidateSet('local', 'partage')]
+  [string] $Mode,
   [string] $RepoPath = (Join-Path $env:USERPROFILE 'dev\inbox-zero'),
   [string] $RepoUrl = 'https://github.com/JaHzHaJ/inbox-zero.git',
   [string] $Branch = 'phase2-recap',
   [string] $SecretsPath,
   [string] $NodeVersion = '24.18.0',
+  [ValidateSet('claude-cli', 'cle-api', 'plus-tard')]
+  [string] $Ia,
   [switch] $SkipTask,
   [switch] $SkipSmokeTest
 )
@@ -59,11 +72,43 @@ function Winget($id, $nom) {
   winget install --id $id -e --source winget --accept-package-agreements --accept-source-agreements
 }
 
+function Demander($question, $choix, $defaut) {
+  # Choix numerote plutot que saisie libre : sur un poste neuf, l'utilisateur
+  # ne connait pas notre vocabulaire interne.
+  Write-Host ""
+  Write-Host $question -ForegroundColor White
+  for ($i = 0; $i -lt $choix.Count; $i++) {
+    $marque = if ($choix[$i].valeur -eq $defaut) { ' (defaut)' } else { '' }
+    Write-Host ("  {0}. {1}{2}" -f ($i + 1), $choix[$i].titre, $marque) -ForegroundColor White
+    Write-Host ("     {0}" -f $choix[$i].detail) -ForegroundColor DarkGray
+  }
+  while ($true) {
+    $r = Read-Host "Votre choix [1-$($choix.Count)]"
+    if (-not $r) { return $defaut }
+    $n = 0
+    if ([int]::TryParse($r, [ref] $n) -and $n -ge 1 -and $n -le $choix.Count) {
+      return $choix[$n - 1].valeur
+    }
+    Write-Host "  Reponse non comprise." -ForegroundColor Yellow
+  }
+}
+
 Write-Host "=== Installation de Gestion Mails ===" -ForegroundColor White
 Info "Depot cible : $RepoPath"
 
+# --- 0. Mode -----------------------------------------------------------------
+if (-not $Mode) {
+  $Mode = Demander 'Comment ce poste doit-il fonctionner ?' @(
+    @{ valeur = 'partage'; titre = 'Partage avec un autre poste';
+       detail = 'Base et verrous heberges (Supabase, Upstash). Les postes voient les memes regles et le meme historique, un seul recap part le matin. Pas de Docker.' },
+    @{ valeur = 'local'; titre = 'Ce poste tout seul';
+       detail = 'Base et Redis dans Docker, ici. Autonome et gratuit, mais rien ne se partage avec un autre poste.' }
+  ) 'partage'
+}
+Ok "Mode : $Mode"
+
 # --- 1. Prerequis ------------------------------------------------------------
-Etape '1/8 Prerequis (git, Node, pnpm)'
+Etape '1/11 Prerequis (git, Node, pnpm)'
 
 if (-not (Existe 'git')) { Winget 'Git.Git' 'Git' }
 if (-not (Existe 'git')) {
@@ -102,8 +147,25 @@ if (-not (Existe 'pnpm')) {
 if (-not (Existe 'pnpm')) { Echec 'pnpm' 'pnpm reste introuvable.' }
 Ok "pnpm : $(pnpm --version)"
 
-# --- 2. Depot ----------------------------------------------------------------
-Etape '2/8 Depot'
+# --- 2. Docker (mode local uniquement) ---------------------------------------
+Etape '2/11 Docker'
+
+if ($Mode -eq 'local') {
+  if (-not (Existe 'docker')) { Winget 'Docker.DockerDesktop' 'Docker Desktop' }
+  if (-not (Existe 'docker')) {
+    Echec 'Docker Desktop' @"
+Docker reste introuvable. En mode local, la base de donnees et Redis tournent
+dans Docker : il est indispensable. Fermer/rouvrir la session puis relancer,
+ou choisir le mode partage (-Mode partage), qui n'a besoin de rien de tout ca.
+"@
+  }
+  Ok 'Docker present'
+} else {
+  Info 'Mode partage : Docker inutile sur ce poste.'
+}
+
+# --- 3. Depot ----------------------------------------------------------------
+Etape '3/11 Depot'
 
 if (Test-Path (Join-Path $RepoPath '.git')) {
   Info 'Depot deja present, mise a jour...'
@@ -125,19 +187,28 @@ if ($RepoPath -like "*OneDrive*") {
   Info 'ATTENTION : le depot est dans OneDrive. Deconseille (node_modules synchronise).'
 }
 
-# --- 3. Secrets --------------------------------------------------------------
-Etape '3/8 Fichier .env (secrets)'
+# --- 4. Secrets --------------------------------------------------------------
+Etape '4/11 Fichier .env (secrets)'
+
+# Un .env par mode : ils different par 4 variables (base et Redis). Le nom
+# suffixe est essaye en premier, le .env generique reste accepte pour les kits
+# fabriques avant l'arrivee des deux modes.
+$suffixe = if ($Mode -eq 'local') { '.env.local-docker' } else { '.env.partage' }
 
 if (-not $SecretsPath) {
-  # Priorite au .env pose A COTE de ce script : c'est ce qui rend le kit ZIP
-  # autonome, decompressable n'importe ou. OneDrive n'est que le repli.
-  $voisin = Join-Path $PSScriptRoot '.env'
-  if (Test-Path $voisin) {
-    $SecretsPath = $voisin
-  } else {
-    $baseOneDrive = if ($env:OneDriveCommercial) { $env:OneDriveCommercial } else { $env:OneDrive }
-    $SecretsPath = Join-Path $baseOneDrive 'Gestion Mails\.env'
+  # Priorite aux fichiers poses A COTE de ce script : c'est ce qui rend le kit
+  # ZIP autonome, decompressable n'importe ou. OneDrive n'est que le repli.
+  $baseOneDrive = if ($env:OneDriveCommercial) { $env:OneDriveCommercial } else { $env:OneDrive }
+  $candidats = @(
+    (Join-Path $PSScriptRoot $suffixe),
+    (Join-Path $PSScriptRoot '.env'),
+    (Join-Path $baseOneDrive "Gestion Mails\$suffixe"),
+    (Join-Path $baseOneDrive 'Gestion Mails\.env')
+  )
+  foreach ($c in $candidats) {
+    if (Test-Path $c) { $SecretsPath = $c; break }
   }
+  if (-not $SecretsPath) { $SecretsPath = $candidats[-1] }
 }
 
 $cible = Join-Path $RepoPath 'apps\web\.env'
@@ -161,10 +232,37 @@ foreach ($cle in @('DATABASE_URL', 'CRON_SECRET', 'AUTH_SECRET', 'EMAIL_ENCRYPT_
     Echec 'Fichier .env' "La variable $cle est absente ou vide dans $cible"
   }
 }
-Ok 'Variables essentielles presentes'
 
-# --- 4. Dependances ----------------------------------------------------------
-Etape '4/8 Dependances'
+# Le .env correspond-il au mode demande ? Une incoherence ici ne se verrait
+# sinon qu'au premier recap manque, plusieurs jours plus tard.
+# L'ancrage ^ evite de confondre avec la ligne "# MODE-LOCAL DATABASE_URL=..."
+# laissee en commentaire pour permettre le retour arriere.
+$baseEstLocale = Select-String -Path $cible -Pattern '^DATABASE_URL=.*(localhost|127\.0\.0\.1)' -Quiet
+if ($Mode -eq 'partage' -and $baseEstLocale) {
+  Echec 'Fichier .env' @"
+Le mode partage a ete demande, mais DATABASE_URL pointe sur ce poste
+(localhost). Ce .env est celui du mode local : avec lui, ce poste aurait sa
+propre base et ne partagerait rien.
+Recuperer le fichier .env.partage dans le dossier OneDrive " Gestion Mails ".
+"@
+}
+if ($Mode -eq 'local' -and -not $baseEstLocale) {
+  Echec 'Fichier .env' @"
+Le mode local a ete demande, mais DATABASE_URL pointe sur une base hebergee.
+Recuperer le fichier .env.local-docker, ou relancer avec -Mode partage.
+"@
+}
+if ($Mode -eq 'partage' -and -not (Select-String -Path $cible -Pattern '^UPSTASH_REDIS_URL=.*https://' -Quiet)) {
+  Echec 'Fichier .env' @"
+En mode partage, UPSTASH_REDIS_URL doit etre une adresse https.
+Une adresse locale signifierait que les postes ne partagent pas leurs verrous :
+ils traiteraient les memes mails chacun de leur cote, en double.
+"@
+}
+Ok "Variables essentielles presentes et coherentes avec le mode $Mode"
+
+# --- 5. Dependances ----------------------------------------------------------
+Etape '5/11 Dependances'
 
 Push-Location $RepoPath
 try {
@@ -178,8 +276,8 @@ try {
   Pop-Location
 }
 
-# --- 5. Client Prisma --------------------------------------------------------
-Etape '5/8 Client Prisma'
+# --- 6. Client Prisma --------------------------------------------------------
+Etape '6/11 Client Prisma'
 
 Push-Location (Join-Path $RepoPath 'apps\web')
 try {
@@ -191,8 +289,44 @@ try {
   Pop-Location
 }
 
-# --- 6. Raccourci Bureau -----------------------------------------------------
-Etape '6/8 Raccourci Bureau'
+# --- 7. Fournisseur d'IA -----------------------------------------------------
+Etape "7/11 Fournisseur d'intelligence artificielle"
+
+# Delegue a un script autonome : le meme sert plus tard, via
+# .claude\configurer-ia.cmd, sans avoir a tout reinstaller.
+$argsIa = @('-RepoPath', $RepoPath)
+if ($Ia) { $argsIa += @('-Choix', $Ia) }
+& (Join-Path $PSScriptRoot 'configurer-ia.ps1') @argsIa
+if ($LASTEXITCODE -ne 0) {
+  # Pas un echec bloquant : le poste s'installe, mais sans classement des mails.
+  Info "Fournisseur d'IA non operationnel. L'installation continue ;"
+  Info "relancer .claude\configurer-ia.cmd quand ce sera regle."
+}
+
+# --- 8. Verification des services --------------------------------------------
+Etape '8/11 Verification des services'
+
+if ($Mode -eq 'local') {
+  Info 'Demarrage des conteneurs avant verification...'
+  & (Join-Path $PSScriptRoot 'ensure-stack.cmd') | Out-Null
+}
+
+Push-Location (Join-Path $RepoPath 'apps\web')
+try {
+  & node 'scripts\verifier-services.mjs'
+  if ($LASTEXITCODE -ne 0) {
+    Echec 'Verification des services' @"
+La base ou Redis ne repondent pas (details ci-dessus).
+Rien ne sert de continuer : sans eux l'application ne peut pas fonctionner.
+"@
+  }
+  Ok 'Base de donnees et Redis operationnels'
+} finally {
+  Pop-Location
+}
+
+# --- 9. Raccourci Bureau -----------------------------------------------------
+Etape '9/11 Raccourci Bureau'
 
 $raccourci = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Gestion Mails.lnk'
 $shell = New-Object -ComObject WScript.Shell
@@ -204,7 +338,7 @@ $lien.Save()
 Ok "Raccourci cree : $raccourci"
 
 # --- 7. Tache planifiee ------------------------------------------------------
-Etape '7/8 Tache planifiee " InboxZero Recap 7h "'
+Etape '10/11 Tache planifiee " InboxZero Recap 7h "'
 
 if ($SkipTask) {
   Info 'Ignoree (-SkipTask)'
@@ -283,7 +417,7 @@ if ($SkipTask) {
 }
 
 # --- 8. Test de fumee --------------------------------------------------------
-Etape '8/8 Test de fumee'
+Etape '11/11 Test de fumee'
 
 if ($SkipSmokeTest) {
   Info 'Ignore (-SkipSmokeTest)'

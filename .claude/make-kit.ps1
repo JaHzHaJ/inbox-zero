@@ -40,12 +40,22 @@ $atelier = Join-Path $env:TEMP "gestion-mails-kit-$([guid]::NewGuid())"
 New-Item -ItemType Directory -Path $atelier | Out-Null
 
 try {
+  # Le kit doit embarquer TOUT ce que install.ps1 appelle : un script manquant
+  # ne se decouvrirait que sur le poste neuf, au milieu de l'installation.
   $aCopier = @(
-    @{ source = Join-Path $RepoPath 'installer.cmd';        nom = 'installer.cmd';     requis = $true }
-    @{ source = Join-Path $RepoPath 'desinstaller.cmd';     nom = 'desinstaller.cmd';  requis = $true }
-    @{ source = Join-Path $RepoPath '.claude\install.ps1';  nom = 'install.ps1';       requis = $true }
-    @{ source = Join-Path $RepoPath '.claude\uninstall.ps1'; nom = 'uninstall.ps1';    requis = $true }
-    @{ source = Join-Path $RepoPath 'INSTALLATION.md';      nom = 'INSTALLATION.md';   requis = $true }
+    @{ source = Join-Path $RepoPath 'installer.cmd';                 nom = 'installer.cmd';           requis = $true }
+    @{ source = Join-Path $RepoPath 'desinstaller.cmd';              nom = 'desinstaller.cmd';        requis = $true }
+    @{ source = Join-Path $RepoPath 'remise-en-service.cmd';         nom = 'remise-en-service.cmd';   requis = $true }
+    @{ source = Join-Path $RepoPath 'basculer-mode.cmd';             nom = 'basculer-mode.cmd';       requis = $true }
+    @{ source = Join-Path $RepoPath '.claude\install.ps1';           nom = 'install.ps1';             requis = $true }
+    @{ source = Join-Path $RepoPath '.claude\uninstall.ps1';         nom = 'uninstall.ps1';           requis = $true }
+    @{ source = Join-Path $RepoPath '.claude\configurer-ia.ps1';     nom = 'configurer-ia.ps1';       requis = $true }
+    @{ source = Join-Path $RepoPath '.claude\remise-en-service.ps1'; nom = 'remise-en-service.ps1';   requis = $true }
+    @{ source = Join-Path $RepoPath '.claude\basculer-mode.ps1';     nom = 'basculer-mode.ps1';       requis = $true }
+    @{ source = Join-Path $RepoPath '.claude\restaurer-base.ps1';    nom = 'restaurer-base.ps1';      requis = $true }
+    @{ source = Join-Path $RepoPath '.claude\sauvegarder-base.ps1';  nom = 'sauvegarder-base.ps1';    requis = $true }
+    @{ source = Join-Path $RepoPath '.claude\arreter-serveur.ps1';   nom = 'arreter-serveur.ps1';     requis = $true }
+    @{ source = Join-Path $RepoPath 'INSTALLATION.md';               nom = 'INSTALLATION.md';         requis = $true }
   )
 
   foreach ($f in $aCopier) {

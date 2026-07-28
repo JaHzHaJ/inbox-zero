@@ -108,24 +108,14 @@ rem suivant, pas attendre le lendemain.
 if "%PURGE_RC%"=="0" echo %AUJOURDHUI%>"%MARQUEUR%"
 
 :fin
-rem --- 3. Purge des vieux brouillons IA, une fois par jour ---
-rem Supprime les brouillons NON MODIFIES plus vieux que le delai regle sur le
-rem compte (14 jours par defaut). Sans cela, les reponses jamais utilisees
-rem s'accumulent indefiniment dans le dossier Brouillons.
-rem Un seul passage par jour : inutile de le refaire toutes les 30 minutes.
-set "MARQUEUR=%LOGDIR%\purge-brouillons-%date:~-4%%date:~3,2%%date:~0,2%.ok"
-if exist "%MARQUEUR%" goto :fin
+rem --- 4. Sauvegarde de la base, une fois par semaine ---
+rem En mode partage la base est hebergee, et le palier gratuit de Supabase ne
+rem fait AUCUNE sauvegarde : celle-ci est la seule copie de secours. Le script
+rem decide lui-meme s'il y a lieu d'agir (age du dernier fichier), et ne garde
+rem que les 8 dernieres, datees, sans jamais ecraser la precedente.
+call "%ROOT%\.claude\sauvegarder-base.cmd" /silencieux >> "%LOG%" 2>&1
+if errorlevel 1 echo [%date% %time%] AVERTISSEMENT: sauvegarde de la base impossible >> "%LOG%"
 
-curl -s -m 120 -H "Authorization: Bearer %SECRET%" "http://localhost:3000/api/cron/draft-cleanup" -o "%LOGDIR%\purge-brouillons-dernier.json"
-set "PURGE_RC=%errorlevel%"
-
-echo [%date% %time%] purge des brouillons ^(curl %PURGE_RC%^) : >> "%LOG%"
-type "%LOGDIR%\purge-brouillons-dernier.json" >> "%LOG%"
-echo. >> "%LOG%"
-
-if "%PURGE_RC%"=="0" echo ok > "%MARQUEUR%"
-
-:fin
 echo [%date% %time%] === termine === >> "%LOG%"
 endlocal
 exit /b 0

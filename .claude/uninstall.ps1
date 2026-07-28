@@ -40,15 +40,31 @@ function Rate($t, $d) { Write-Host "    [echec] $t" -ForegroundColor Red; if ($d
 $logDir = Join-Path $env:LOCALAPPDATA 'GestionMails'
 $raccourci = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Gestion Mails.lnk'
 
+# Le mode n'est pas demande : il est DEDUIT du .env. Un desinstalleur doit
+# regarder ce qui est la, pas supposer ce qu'on a voulu installer. C'est aussi
+# pourquoi il n'en existe qu'un seul : lancer le mauvais des deux serait le
+# principal risque.
+$fichierEnv = Join-Path $RepoPath 'apps\web\.env'
+$mode = 'inconnu'
+if (Test-Path $fichierEnv) {
+  $mode = if (Select-String -Path $fichierEnv -Pattern '^DATABASE_URL=.*(localhost|127\.0\.0\.1)' -Quiet) { 'local' } else { 'partage' }
+}
+
 # --- Ce qui va etre fait, avant de le faire -----------------------------------
 Write-Host "=== Gestion Mails : $(if ($Desinstaller) { 'DESINSTALLATION' } else { 'DESACTIVATION' }) ===" -ForegroundColor White
+Write-Host ""
+Write-Host "Mode detecte sur ce poste : $mode" -ForegroundColor White
 Write-Host ""
 Write-Host "Seront traites :" -ForegroundColor White
 Write-Host "  - tache planifiee " $NomTache "  : $(if ($Desinstaller) { 'SUPPRIMEE' } else { 'desactivee' })"
 Write-Host "  - serveur local sur le port 3000  : arrete"
 if ($Desinstaller) {
   Write-Host "  - raccourci Bureau                : supprime"
-  Write-Host "  - conteneurs et volumes Docker    : supprimes (docker compose down -v)"
+  if ($mode -eq 'local') {
+    Write-Host "  - base et Redis (conteneurs Docker) : SUPPRIMES avec leurs donnees"
+  } else {
+    Write-Host "  - anciens conteneurs Docker, s il en reste : supprimes"
+  }
   Write-Host "  - journaux ($logDir) : supprimes"
   Write-Host "  - depot ($RepoPath) : supprime"
 }
@@ -60,6 +76,18 @@ foreach ($o in @(
 Write-Host ""
 Write-Host "Ne seront PAS touches : tes mails, tes brouillons, tes categories Outlook," -ForegroundColor White
 Write-Host "et le fichier .env dans OneDrive." -ForegroundColor White
+if ($mode -eq 'partage') {
+  Write-Host ""
+  Write-Host "Ce poste est en mode PARTAGE : la base Supabase et Redis Upstash ne sont" -ForegroundColor Green
+  Write-Host "PAS touches. Les regles, l'historique et le recap restent intacts, et" -ForegroundColor Green
+  Write-Host "l'autre poste continue de fonctionner normalement." -ForegroundColor Green
+}
+if ($mode -eq 'local' -and $Desinstaller) {
+  Write-Host ""
+  Write-Host "Ce poste est en mode LOCAL : la base est ICI, dans Docker. La supprimer" -ForegroundColor Yellow
+  Write-Host "efface les regles et tout l'historique du recap, definitivement." -ForegroundColor Yellow
+  Write-Host "Pour les conserver, faire d'abord une sauvegarde : sauvegarder-base.cmd" -ForegroundColor Yellow
+}
 Write-Host ""
 
 if (-not $SansConfirmation) {
@@ -84,39 +112,12 @@ try {
 
 # --- 2. Serveur ---------------------------------------------------------------
 Etape 'Serveur local'
-$connexion = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
-$proprietaire = $null
-if ($connexion) {
-  $proprietaire = Get-CimInstance Win32_Process -Filter "ProcessId=$($connexion[0].OwningProcess)" -ErrorAction SilentlyContinue
-}
-if (-not $proprietaire) {
-  Info 'Aucun serveur en cours.'
-} elseif ($proprietaire.Name -ne 'node.exe') {
-  Info "Le port 3000 est occupe par $($proprietaire.Name), pas par l'application : rien n'est arrete."
-} else {
-  # On remonte jusqu'au cmd racine : tuer le seul processus qui ecoute ne suffit
-  # pas, le superviseur de Next relance aussitot son worker. On ne grimpe qu'a
-  # travers des node.exe : au-dela (terminal, Explorateur), on tuerait des
-  # programmes sans rapport avec l'application.
-  $racine = $proprietaire.ProcessId
-  $courant = $proprietaire.ParentProcessId
-  for ($i = 0; $i -lt 6; $i++) {
-    $p = Get-CimInstance Win32_Process -Filter "ProcessId=$courant" -ErrorAction SilentlyContinue
-    if (-not $p) { break }
-    if ($p.Name -eq 'cmd.exe') { $racine = $p.ProcessId; break }
-    if ($p.Name -ne 'node.exe') { break }
-    $racine = $p.ProcessId
-    $courant = $p.ParentProcessId
-  }
-  function Stop-Arbre($id) {
-    Get-CimInstance Win32_Process -Filter "ParentProcessId=$id" -ErrorAction SilentlyContinue |
-      ForEach-Object { Stop-Arbre $_.ProcessId }
-    Stop-Process -Id $id -Force -ErrorAction SilentlyContinue
-  }
-  Stop-Arbre $racine
-  Start-Sleep -Seconds 2
-  Ok 'Serveur arrete'
-}
+# Logique partagee avec basculer-mode : un seul endroit a corriger, et les trois
+# pieges connus (superviseur qui relance, remontee limitee aux node.exe, port
+# occupe par un autre programme) y sont traites une fois pour toutes.
+& (Join-Path $PSScriptRoot 'arreter-serveur.ps1')
+if ($LASTEXITCODE -eq 0) { Ok 'Serveur arrete (ou deja a l arret)' }
+else { Rate 'Arret du serveur' 'Le port 3000 repond encore.' }
 
 if (-not $Desinstaller) {
   Write-Host "`n=== Desactivation terminee ===" -ForegroundColor White
