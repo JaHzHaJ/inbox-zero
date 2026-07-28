@@ -94,7 +94,7 @@
     <h1>📬 Gestion Mails</h1>
     <p class="sous-titre" id="sous-titre">Application locale de tri et de récapitulatif</p>
 
-    <a class="bouton" data-chemin="/automation" href="http://localhost:3000/accounts">
+    <a class="bouton" href="http://localhost:3000/aller/automation">
       <span class="picto">📋</span>
       <span>
         <span class="libelle">Règles de tri</span>
@@ -102,7 +102,7 @@
       </span>
     </a>
 
-    <a class="bouton" data-chemin="/automation?tab=settings" href="http://localhost:3000/accounts">
+    <a class="bouton" href="http://localhost:3000/aller/automation?tab=settings">
       <span class="picto">⚙️</span>
       <span>
         <span class="libelle">Réglages de l'assistant</span>
@@ -110,7 +110,7 @@
       </span>
     </a>
 
-    <a class="bouton" data-chemin="/automation?tab=history" href="http://localhost:3000/accounts">
+    <a class="bouton" href="http://localhost:3000/aller/automation?tab=history">
       <span class="picto">🕘</span>
       <span>
         <span class="libelle">Historique des traitements</span>
@@ -126,14 +126,7 @@
       </span>
     </a>
 
-    <div class="config" id="config" hidden>
-      <strong>Accès direct (facultatif)</strong><br>
-      Pour que les boutons ci-dessus ouvrent directement les bonnes pages, collez
-      l'identifiant de compte qui apparaît dans l'URL de l'application
-      (<code>localhost:3000/<em>identifiant</em>/automation</code>).
-      <input id="champ-compte" placeholder="identifiant de compte" autocomplete="off">
-      <button id="valider-compte">Mémoriser sur ce poste</button>
-    </div>
+    
 
     <p class="pied">
       Le récap part automatiquement à <strong>7 h les jours ouvrés</strong>. Si aucun poste
@@ -149,34 +142,5 @@
     </p>
   </main>
 
-  <script>
-    (function () {
-      var CLE = "inboxZeroAccountId";
-      var BASE = "http://localhost:3000";
-
-      function appliquer(id) {
-        document.querySelectorAll("a.bouton[data-chemin]").forEach(function (lien) {
-          lien.href = BASE + "/" + id + lien.dataset.chemin;
-        });
-        document.getElementById("config").hidden = true;
-      }
-
-      var id = null;
-      try { id = localStorage.getItem(CLE); } catch (e) { /* file:// restreint */ }
-
-      if (id) {
-        appliquer(id);
-      } else {
-        document.getElementById("config").hidden = false;
-      }
-
-      document.getElementById("valider-compte").addEventListener("click", function () {
-        var saisie = document.getElementById("champ-compte").value.trim();
-        if (!saisie) return;
-        try { localStorage.setItem(CLE, saisie); } catch (e) { /* ignore */ }
-        appliquer(saisie);
-      });
-    })();
-  </script>
 </body>
 </html>
