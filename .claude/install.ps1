@@ -308,7 +308,9 @@ Etape '8/11 Verification des services'
 
 if ($Mode -eq 'local') {
   Info 'Demarrage des conteneurs avant verification...'
-  & (Join-Path $PSScriptRoot 'ensure-stack.cmd') | Out-Null
+  # Depuis le depot, deja clone a l'etape 3 : le kit ZIP decompresse, lui,
+  # ne contient pas ensure-stack.cmd.
+  & (Join-Path $RepoPath '.claude\ensure-stack.cmd') | Out-Null
 }
 
 Push-Location (Join-Path $RepoPath 'apps\web')

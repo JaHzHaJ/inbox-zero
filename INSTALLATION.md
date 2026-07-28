@@ -20,10 +20,18 @@ aucun réglage ne peut affirmer le contraire de la réalité.
 
 ## Installation express
 
-1. Ouvrir le dossier OneDrive **`Gestion Mails`** (il contient le kit et le `.env`).
-   Attendre la fin de la synchronisation.
-2. Double-cliquer **`installer.cmd`**.
-3. Répondre aux deux questions : le **mode**, puis le **fournisseur d'IA**.
+1. Ouvrir le dossier OneDrive **`Gestion Mails`** et attendre la fin de la
+   synchronisation.
+2. Décompresser **`Gestion-Mails-Installation.zip`** n'importe où (le Bureau
+   convient très bien).
+3. Dans le dossier décompressé, double-cliquer **`installer.cmd`**.
+4. Répondre aux deux questions : le **mode** (« partagé » pour un poste qui
+   rejoint la boîte commune), puis le **fournisseur d'IA**.
+
+> Le ZIP est **le seul chemin d'installation** : aucun script ne se lance
+> directement depuis le dossier OneDrive. À côté du ZIP ne vivent que le `.env`
+> de référence, sa variante `.env.local-docker` et cette documentation —
+> rafraîchis à chaque fabrication du kit.
 
 À la fin, un raccourci **Gestion Mails** apparaît sur le Bureau et la tâche planifiée
 « InboxZero Recap 7h » est en place.
@@ -183,6 +191,11 @@ privé). Rien de personnel ne doit y être poussé.
 Produit `Gestion-Mails-Installation.zip` dans le dossier OneDrive « Gestion Mails ». Le ZIP
 se décompresse **n'importe où** : chaque script cherche ses voisins à côté de lui d'abord.
 Pour un kit transmissible sans secrets : `.\.claude\make-kit.ps1 -SansSecrets`.
+
+La fabrication **entretient aussi le dossier OneDrive** : elle y rafraîchit le `.env`
+(les deux modes), sa variante `.env.local-docker` (mode local activé) et
+`INSTALLATION.md`, et supprime les anciennes copies de scripts posées à plat —
+elles avaient dérivé une fois, elles ne le pourront plus.
 
 ## Désactiver ou désinstaller
 

@@ -119,6 +119,14 @@ qa/browser-flows/results/*
 .claude/regles-avant-*.txt
 .claude/retag-*.log
 
+# essais poses a plat dans apps/web pendant le developpement (demonstrations,
+# rendus de recap locaux) : jamais sur le fork public.
+/apps/web/digest-demo.html
+/apps/web/digest-preview.html
+/apps/web/graph-isolation-test.mjs
+/apps/web/render-digest-demo.mts
+/apps/web/render-digest-preview.mts
+
 # eval reports
 eval-results/
 

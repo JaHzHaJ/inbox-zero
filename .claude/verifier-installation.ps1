@@ -84,6 +84,8 @@ if ($sauvegardes.Count -eq 0) {
   if ($age -gt 8) { Rate "Derniere sauvegarde vieille de $age jours (attendu : moins de 8)." }
   else { Ok "$($sauvegardes.Count) sauvegarde(s), la plus recente il y a $age jour(s)" }
   # Lisible ? Une archive corrompue ne se decouvre pas le jour ou elle sert.
+  # Windows PowerShell 5.1 ne charge pas cette assembly de lui-meme.
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
   try {
     $zip = [System.IO.Compression.ZipFile]::OpenRead($sauvegardes[0].FullName)
     $entree = $zip.Entries | Where-Object { $_.Name -like '*.sql' } | Select-Object -First 1

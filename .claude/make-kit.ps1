@@ -80,7 +80,11 @@ GESTION MAILS - installation sur un nouveau poste
 
 1. Decompresser ce dossier n'importe ou (le Bureau convient tres bien).
 2. Double-cliquer installer.cmd.
-3. Suivre les eventuelles demandes de confirmation.
+3. Repondre aux deux questions :
+     - le MODE : " Partage avec un autre poste " est le bon choix pour un
+       poste qui rejoint la boite commune (c'est le defaut) ;
+     - le FOURNISSEUR D'IA : CLI Claude par defaut.
+4. Suivre les eventuelles demandes de confirmation.
 
 L'emplacement du dossier decompresse n'a aucune importance.
 
@@ -122,7 +126,45 @@ Details complets dans INSTALLATION.md.
   Get-ChildItem $atelier | ForEach-Object {
     "  {0,-20} {1,8} o" -f $_.Name, $_.Length
   }
+
+  # --- Entretien du dossier de destination -------------------------------------
+  # Le ZIP est le SEUL chemin d'installation. Des copies de scripts posees a
+  # plat dans le dossier OneDrive ont deja derive une fois (audit du
+  # 28/07/2026) : on les supprime, et on n'entretient a cote du ZIP que le
+  # .env de reference, sa variante locale et la documentation.
+  foreach ($vieux in @('installer.cmd', 'desinstaller.cmd', 'install.ps1', 'uninstall.ps1')) {
+    $chemin = Join-Path $Destination $vieux
+    if (Test-Path $chemin) {
+      Remove-Item -LiteralPath $chemin -Force
+      Write-Host "Copie a plat supprimee (le ZIP fait foi) : $vieux" -ForegroundColor DarkGray
+    }
+  }
+  Copy-Item (Join-Path $RepoPath 'INSTALLATION.md') (Join-Path $Destination 'INSTALLATION.md') -Force
+
   if (-not $SansSecrets) {
+    Copy-Item $env_source (Join-Path $Destination '.env') -Force
+    $lignes = @(Get-Content $env_source)
+    if (($lignes | Where-Object { $_ -match '^DATABASE_URL=.*(localhost|127\.0\.0\.1)' })) {
+      Write-Host "ATTENTION : le .env embarque est en mode LOCAL (base sur ce poste)." -ForegroundColor Yellow
+    }
+    # Variante locale prete a l'emploi : les lignes en reserve # MODE-LOCAL
+    # deviennent actives, l'actif du jour part en reserve. C'est le fichier
+    # que les messages d'install.ps1 et basculer-mode.ps1 invitent a prendre.
+    $variables = @('DATABASE_URL', 'DIRECT_URL', 'UPSTASH_REDIS_URL', 'UPSTASH_REDIS_TOKEN')
+    if (@($lignes | Where-Object { $_ -like '# MODE-LOCAL *' }).Count -gt 0) {
+      $locale = foreach ($l in $lignes) {
+        if ($l -like '# MODE-LOCAL *') { $l.Substring('# MODE-LOCAL '.Length) }
+        elseif ($l -match '^\s*([A-Z0-9_]+)\s*=' -and $variables -contains $Matches[1]) { "# MODE-PARTAGE $l" }
+        else { $l }
+      }
+      [System.IO.File]::WriteAllLines(
+        (Join-Path $Destination '.env.local-docker'),
+        [string[]] $locale,
+        (New-Object System.Text.UTF8Encoding($false))
+      )
+      Write-Host "Compagnons OneDrive rafraichis : .env, .env.local-docker, INSTALLATION.md" -ForegroundColor DarkGray
+    }
+
     Write-Host ""
     Write-Host "Ce kit contient le .env : ne pas le diffuser hors de tes postes." -ForegroundColor Yellow
   }
